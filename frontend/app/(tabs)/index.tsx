@@ -14,7 +14,8 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
-  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes } = useCycleSense();
+  //const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes } = useCycleSense();
+  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings } = useCycleSense();
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
   useEffect(() => {
@@ -62,7 +63,7 @@ export default function Dashboard() {
         <MaterialCommunityIcons name="close" size={18} color={colors.muted} />
       </Pressable>
     ) : null}
-    <View style={styles.statusCard}>
+    { /** <View style={styles.statusCard}>
       <View style={styles.statusTop}><View><Text style={styles.cardKicker}>LIVE STATUS</Text><Text style={styles.statusLabel}>{modeLabel(status.mode)}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{bridgeLabel}</Text></View></View>
       <View style={styles.percentRow}><Text style={styles.percent}>{percent}</Text><Text style={styles.percentSign}>%</Text><View style={styles.batteryGlyph}><MaterialCommunityIcons name={status.mode === "charging" ? "battery-charging" : "battery-medium"} size={66} color={colors.brandPrimary} /></View></View>
       <Text style={styles.statusNote}>{nativeBridgeActive ? "Native BatteryManager bridge is streaming telemetry." : status.available ? "Reading the device power state directly." : "Battery metrics will appear when the native battery bridge is available."}</Text>
@@ -76,7 +77,34 @@ export default function Dashboard() {
       <MetricTile icon="clock-outline" label={fourthLabel} value={fourthValue} hint={fourthHint} tone={isCharging ? "success" : "neutral"} />
     </View>
     <SectionTitle title="Live curve" action="Raw samples" />
-    <ChartFrame label="Charge / discharge curve" caption="Awaiting first complete cycle" />
+    <ChartFrame label="Charge / discharge curve" caption="Awaiting first complete cycle" /> **/ }
+    {settings.dashboardOrder.map((cardId) => {
+      if (cardId === "status") return (
+        <View key="status" style={styles.statusCard}>
+          <View style={styles.statusTop}><View><Text style={styles.cardKicker}>LIVE STATUS</Text><Text style={styles.statusLabel}>{modeLabel(status.mode)}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{bridgeLabel}</Text></View></View>
+          <View style={styles.percentRow}><Text style={styles.percent}>{percent}</Text><Text style={styles.percentSign}>%</Text><View style={styles.batteryGlyph}><MaterialCommunityIcons name={status.mode === "charging" ? "battery-charging" : "battery-medium"} size={66} color={colors.brandPrimary} /></View></View>
+          <Text style={styles.statusNote}>{nativeBridgeActive ? "Native BatteryManager bridge is streaming telemetry." : status.available ? "Reading the device power state directly." : "Battery metrics will appear when the native battery bridge is available."}</Text>
+          <View testID="dashboard-auto-pill" style={styles.autoPill}><MaterialCommunityIcons name={openSession ? "record-circle-outline" : "power-plug-outline"} size={16} color={openSession ? colors.success : colors.muted} /><Text style={styles.autoPillText}>{autoStatus}</Text></View>
+        </View>
+      );
+      if (cardId === "telemetry") return (
+        <View key="telemetry">
+          <SectionTitle title="Quick telemetry" action={nativeBridgeActive ? "Native fields" : "Fallback"} />
+          <View style={styles.metricGrid}>
+            <MetricTile icon="flash-outline" label="Power draw" value={powerDraw} hint={powerDrawHint} tone="accent" />
+            <MetricTile icon="thermometer-low" label="Temperature" value={temperature} hint={temperatureHint} />
+            <MetricTile icon="heart-pulse" label="Battery health" value={health} hint={healthHint} tone="success" />
+            <MetricTile icon="clock-outline" label={fourthLabel} value={fourthValue} hint={fourthHint} tone={isCharging ? "success" : "neutral"} />
+          </View>
+        </View>
+      );
+      return (
+        <View key="curve">
+          <SectionTitle title="Live curve" action="Raw samples" />
+          <ChartFrame label="Charge / discharge curve" caption="Awaiting first complete cycle" />
+        </View>
+      );
+    })}
     <View style={styles.notice}><MaterialCommunityIcons name="shield-check-outline" size={20} color={colors.success} /><View style={styles.noticeCopy}><Text style={styles.noticeTitle}>Private by default</Text><Text style={styles.noticeBody}>Your battery history stays on this device. No account or cloud sync is required.</Text></View></View>
   </ScrollView></View>;
 }

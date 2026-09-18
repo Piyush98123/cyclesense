@@ -19,6 +19,7 @@ export type BatteryStatus = {
 };
 
 export type ChargerCategory = "fast" | "standard" | "slow" | "trickle";
+export type CurvePoint = { t: number; level: number };
 
 export type Session = {
   id: string;
@@ -46,6 +47,7 @@ export type Session = {
   baselineDeviation: number | null; // % deviation from 7-day baseline, only for discharge sessions
   note: string | null;
   tags: string[] | null;
+  curve: CurvePoint[] | null; // raw level samples captured during the session, for comparison overlays
 };
 
 export type TopApp = {
@@ -102,6 +104,33 @@ export type Charger = {
   lastUsedAt: string;
 };
 
+// export type CycleSettings = {
+//   soundCues: boolean;
+//   chargeAlert: number;
+//   dischargeAlert: number;
+//   alwaysOn: boolean;
+//   backgroundSampling: boolean;
+//   usageStatsEnabled: boolean;
+// };
+
+// export const defaultSettings: CycleSettings = {
+//   soundCues: true,
+//   chargeAlert: 90,
+//   dischargeAlert: 20,
+//   alwaysOn: false,
+//   backgroundSampling: false,
+//   usageStatsEnabled: false,
+// };
+
+
+export type DashboardCardId = "status" | "telemetry" | "curve";
+
+export const dashboardCardLabels: Record<DashboardCardId, string> = {
+  status: "Live status",
+  telemetry: "Quick telemetry",
+  curve: "Live curve",
+};
+
 export type CycleSettings = {
   soundCues: boolean;
   chargeAlert: number;
@@ -109,6 +138,7 @@ export type CycleSettings = {
   alwaysOn: boolean;
   backgroundSampling: boolean;
   usageStatsEnabled: boolean;
+  dashboardOrder: DashboardCardId[];
 };
 
 export const defaultSettings: CycleSettings = {
@@ -118,7 +148,17 @@ export const defaultSettings: CycleSettings = {
   alwaysOn: false,
   backgroundSampling: false,
   usageStatsEnabled: false,
+  dashboardOrder: ["status", "telemetry", "curve"],
 };
+
+export function moveDashboardCard(order: DashboardCardId[], id: DashboardCardId, direction: -1 | 1): DashboardCardId[] {
+  const index = order.indexOf(id);
+  const target = index + direction;
+  if (index === -1 || target < 0 || target >= order.length) return order;
+  const next = [...order];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
+}
 
 export const SESSION_STORAGE_KEY = "cyclesense:sessions";
 export const SETTINGS_STORAGE_KEY = "cyclesense:settings";
@@ -181,6 +221,36 @@ export function classifyCharger(input: {
   const plug = input.pluggedLabel && input.pluggedLabel !== "unknown" && input.pluggedLabel !== "unplugged" ? capitalize(input.pluggedLabel) : null;
   const base = chargerCategoryLabel(category);
   return { label: plug ? `${plug} · ${base}` : base, category };
+}
+
+/**
+ * Resamples a session's raw curve onto `points` evenly-spaced steps across
+ * 0-100% of its own duration, using linear interpolation. Two sessions have
+ * different real durations and different raw sample counts, so this is what
+ * lets them be plotted on one shared x-axis for a fair overlay comparison.
+ * Falls back to a straight line between start/end when there's no captured
+ * curve (older sessions recorded before this feature existed).
+ */
+export function normalizeCurve(session: Session, points = 20): number[] {
+  const raw = session.curve;
+  if (!raw || raw.length < 2) {
+    const start = session.startLevel;
+    const end = session.endLevel ?? session.startLevel;
+    return Array.from({ length: points }, (_, i) => start + ((end - start) * i) / (points - 1));
+  }
+  const sorted = [...raw].sort((a, b) => a.t - b.t);
+  const t0 = sorted[0].t;
+  const t1 = sorted[sorted.length - 1].t;
+  const span = Math.max(1, t1 - t0);
+  return Array.from({ length: points }, (_, i) => {
+    const targetT = t0 + (span * i) / (points - 1);
+    let j = 0;
+    while (j < sorted.length - 2 && sorted[j + 1].t < targetT) j++;
+    const a = sorted[j];
+    const b = sorted[j + 1] ?? a;
+    const ratio = b.t === a.t ? 0 : (targetT - a.t) / (b.t - a.t);
+    return a.level + (b.level - a.level) * ratio;
+  });
 }
 
 export function chargerCategoryLabel(category: ChargerCategory): string {

@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppHeader, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
-import { Charger, ChargerCategory, formatClock, formatDuration, Session, SESSION_HISTORY_LIMIT } from "@/src/data/cyclesense";
+// import { AppHeader, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
+// import { Charger, ChargerCategory, formatClock, formatDuration, Session, SESSION_HISTORY_LIMIT } from "@/src/data/cyclesense";
+import { AppHeader, CompareChartFrame, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
+import { Charger, ChargerCategory, formatClock, formatDuration, normalizeCurve, Session, SESSION_HISTORY_LIMIT } from "@/src/data/cyclesense";
 import { DIARY_TAG_PRESETS } from "@/src/data/digest";
 import { useCycleSense } from "@/src/hooks/useCycleSense";
 import { makeStyles, useTheme } from "@/src/theme";
@@ -15,12 +17,24 @@ export default function Timeline() {
   const { colors } = useTheme();
   const styles = useStyles();
   const { sessions, chargers, ready, refresh, reloadSessions, renameCharger, forgetCharger, updateSessionDiary } = useCycleSense();
+  // const [selected, setSelected] = useState<Session | null>(null);
   const [selected, setSelected] = useState<Session | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
   const [editingCharger, setEditingCharger] = useState<Charger | null>(null);
   const [draftName, setDraftName] = useState("");
   useFocusEffect(useCallback(() => { refresh(); reloadSessions(); }, [refresh, reloadSessions]));
 
   const openRename = (charger: Charger) => { setEditingCharger(charger); setDraftName(charger.name); };
+  const toggleCompareMode = () => { setCompareMode((v) => !v); setCompareIds([]); };
+  const toggleCompareSelection = (id: string) => {
+    setCompareIds((current) => {
+      if (current.includes(id)) return current.filter((c) => c !== id);
+      if (current.length >= 2) return [current[1], id]; // keep it to the two most recently picked
+      return [...current, id];
+    });
+  };
+  const compareSessions = sessions.filter((s) => compareIds.includes(s.id));
   const closeRename = () => { setEditingCharger(null); setDraftName(""); };
   const commitRename = async () => {
     if (editingCharger) await renameCharger(editingCharger.id, draftName);
@@ -54,9 +68,16 @@ export default function Timeline() {
         </Pressable>
       ))}</View>
     </> : null}
-    <SectionTitle title="Session history" action={ready ? `Last ${SESSION_HISTORY_LIMIT}` : "Loading"} />
+    {/* <SectionTitle title="Session history" action={ready ? `Last ${SESSION_HISTORY_LIMIT}` : "Loading"} /> */}
+    <View style={styles.sectionRow}>
+      <SectionTitle title="Session history" action={ready ? `Last ${SESSION_HISTORY_LIMIT}` : "Loading"} />
+      {sessions.length >= 2 ? <Pressable testID="compare-toggle" onPress={toggleCompareMode} accessibilityRole="button" style={({ pressed }) => [styles.compareToggle, compareMode && styles.compareToggleOn, pressed && styles.pressed]}>
+        <Text style={[styles.compareToggleText, compareMode && styles.compareToggleTextOn]}>{compareMode ? "Cancel compare" : "Compare"}</Text>
+      </Pressable> : null}
+    </View>
     {sessions.length === 0 ? <EmptyPanel icon="timeline-clock-outline" title="No cycles recorded yet" body="Plug in your device and CycleSense will automatically capture the charge session. Only the last 5 sessions are kept on device." /> : <View style={styles.list}>{sessions.map((session) => (
-      <Pressable testID="session-row" key={session.id} onPress={() => setSelected(session)} accessibilityRole="button" style={({ pressed }) => [styles.sessionRow, pressed && styles.pressed]}>
+      // <Pressable testID="session-row" key={session.id} onPress={() => setSelected(session)} accessibilityRole="button" style={({ pressed }) => [styles.sessionRow, pressed && styles.pressed]}>
+        <Pressable testID="session-row" key={session.id} onPress={() => compareMode ? toggleCompareSelection(session.id) : setSelected(session)} accessibilityRole="button" style={({ pressed }) => [styles.sessionRow, compareMode && compareIds.includes(session.id) && styles.sessionRowSelected, pressed && styles.pressed]}>
         <View style={[styles.sessionIcon, session.mode === "charge" ? styles.chargeIcon : styles.dischargeIcon]}>
           <MaterialCommunityIcons name={session.mode === "charge" ? "battery-charging" : "battery-minus-outline"} size={22} color={session.mode === "charge" ? colors.success : colors.warning} />
         </View>
@@ -75,6 +96,9 @@ export default function Timeline() {
         </View>
       </Pressable>
     ))}</View>}
+        {compareMode && compareIds.length === 2 ? <Pressable testID="run-compare" onPress={() => setCompareIds([...compareIds])} accessibilityRole="button" style={({ pressed }) => [styles.primaryButton, styles.compareCta, pressed && styles.pressed]}>
+      <Text style={styles.primaryText}>Compare selected sessions</Text>
+    </Pressable> : null}
   </ScrollView>
 
   <Modal visible={selected !== null} transparent animationType="slide" onRequestClose={() => setSelected(null)}>
@@ -154,6 +178,34 @@ export default function Timeline() {
       </View>
     </View>
   </Modal>
+
+    <Modal visible={compareMode && compareIds.length === 2} transparent animationType="slide" onRequestClose={() => setCompareIds([])}>
+    <View style={styles.modalBackdrop}>
+      <View style={styles.modalShade} />
+      <View style={[styles.modal, { paddingBottom: insets.bottom + 20 }]}>
+        <View style={styles.modalHandle} />
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Compare sessions</Text>
+          <Pressable onPress={() => setCompareIds([])} accessibilityRole="button" style={styles.closeButton}><MaterialCommunityIcons name="close" size={22} color={colors.onSurfaceSecondary} /></Pressable>
+        </View>
+        {compareSessions.length === 2 ? <>
+          <CompareChartFrame
+            labelA={formatClock(compareSessions[0].startAt)}
+            labelB={formatClock(compareSessions[1].startAt)}
+            seriesA={normalizeCurve(compareSessions[0])}
+            seriesB={normalizeCurve(compareSessions[1])}
+          />
+          <View style={styles.detailGrid}>
+            <Detail label={`${formatClock(compareSessions[0].startAt)} rate`} value={compareSessions[0].rate === null ? "—" : `${compareSessions[0].rate}% / hr`} />
+            <Detail label={`${formatClock(compareSessions[1].startAt)} rate`} value={compareSessions[1].rate === null ? "—" : `${compareSessions[1].rate}% / hr`} />
+            <Detail label="Duration A" value={formatDuration(compareSessions[0].durationMinutes)} />
+            <Detail label="Duration B" value={formatDuration(compareSessions[1].durationMinutes)} />
+          </View>
+          {!compareSessions[0].curve || !compareSessions[1].curve ? <Text style={styles.confidence}>One or both sessions predate curve tracking, so their line is a straight estimate between start and end rather than a real curve.</Text> : null}
+        </> : null}
+      </View>
+    </View>
+  </Modal>
   </View>;
 }
 
@@ -215,6 +267,13 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   chargerName: { color: colors.onSurface, fontSize: 15, fontWeight: "500" },
   chargerMeta: { color: colors.muted, fontSize: 12 },
   list: { gap: 10 }, sessionRow: { minHeight: 96, flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: 14, padding: 14, gap: 12 }, pressed: { opacity: 0.72 }, sessionIcon: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center" }, chargeIcon: { backgroundColor: colors.brandTertiary }, dischargeIcon: { backgroundColor: colors.surfaceTertiary }, sessionCopy: { flex: 1, gap: 4 }, sessionTitleRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }, sessionTitle: { color: colors.onSurface, fontSize: 14, fontWeight: "500" }, liveLabel: { color: colors.success, fontSize: 10, fontWeight: "600", letterSpacing: 0.8 }, sessionMeta: { color: colors.muted, fontSize: 12 }, rate: { alignItems: "flex-end" }, rateValue: { color: colors.brandPrimary, fontSize: 20, fontWeight: "500" }, rateLabel: { color: colors.muted, fontSize: 10 },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: -6 },
+  compareToggle: { minHeight: 36, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border, justifyContent: "center" },
+  compareToggleOn: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary },
+  compareToggleText: { color: colors.onSurfaceSecondary, fontSize: 12, fontWeight: "600" },
+  compareToggleTextOn: { color: colors.brandPrimary },
+  sessionRowSelected: { borderColor: colors.brandPrimary, borderWidth: 2 },
+  compareCta: { marginTop: 4 },
   chargerBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8, borderWidth: 1 }, chargerBadgeText: { fontSize: 10, fontWeight: "600", letterSpacing: 0.4, color: colors.onSurface }, chargerBadgeFast: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary }, chargerBadgeStandard: { backgroundColor: colors.surfaceTertiary, borderColor: colors.info }, chargerBadgeSlow: { backgroundColor: colors.surfaceTertiary, borderColor: colors.warning }, chargerBadgeTrickle: { backgroundColor: colors.surfaceTertiary, borderColor: colors.divider },
   modalBackdrop: { flex: 1, backgroundColor: colors.surface, justifyContent: "flex-end" }, modalShade: { ...StyleSheet.absoluteFill, backgroundColor: colors.surfaceInverse, opacity: 0.72 }, modal: { minHeight: "50%", backgroundColor: colors.surfaceSecondary, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }, modalHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: colors.border, alignSelf: "center", marginBottom: 18 }, modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, modalTitle: { color: colors.onSurface, fontSize: 22, fontWeight: "500" }, closeButton: { minWidth: 44, minHeight: 44, alignItems: "flex-end", justifyContent: "center" }, modalMode: { color: colors.brandPrimary, fontSize: 13, marginTop: 8, marginBottom: 22 }, detailGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, detail: { width: "47%", backgroundColor: colors.surfaceTertiary, borderRadius: 10, padding: 12, gap: 5 }, detailLabel: { color: colors.muted, fontSize: 11 }, detailValue: { color: colors.onSurface, fontSize: 14, fontWeight: "500" }, confidence: { color: colors.onSurfaceSecondary, fontSize: 12, lineHeight: 18, marginTop: 24 },
   topApps: { marginTop: 20, gap: 8 },

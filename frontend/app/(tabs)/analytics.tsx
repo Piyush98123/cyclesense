@@ -17,7 +17,7 @@ export default function Analytics() {
   const { colors } = useTheme();
   const styles = useStyles();
   const router = useRouter();
-  const { sessions, samples, screenDaily, capabilities, nativeBridgeActive, baseline } = useCycleSense();
+  const { sessions, samples, screenDaily, screenDailyLive, capabilities, nativeBridgeActive, baseline } = useCycleSense();
   const [range, setRange] = useState<(typeof ranges)[number]>("24H");
   const hasCompleteCycle = sessions.some((session) => session.endAt !== null);
 
@@ -31,9 +31,9 @@ export default function Analytics() {
   const rateSum = sessions.reduce((acc, s) => (s.rate !== null && s.mode === "discharge" ? acc + s.rate : acc), 0);
   const rateCount = sessions.filter((s) => s.rate !== null && s.mode === "discharge").length;
   const averageDrain = rateCount > 0 ? `${(rateSum / rateCount).toFixed(1)}%` : "—";
-  const screenTotal = screenDaily.totalOnMinutes > 0 ? formatMinutes(screenDaily.totalOnMinutes) : "—";
+  const screenTotal = screenDailyLive.totalOnMinutes > 0 ? formatMinutes(screenDailyLive.totalOnMinutes) : "—";
   const screenTotalHint = capabilities.screenTracking ? "On-screen today" : "Native build only";
-  const longestStreak = screenDaily.longestOnMinutes > 0 ? formatMinutes(screenDaily.longestOnMinutes) : "—";
+  const longestStreak = screenDailyLive.longestOnMinutes > 0 ? formatMinutes(screenDailyLive.longestOnMinutes) : "—";
   const longestHint = capabilities.screenTracking ? "Longest run today" : "Native build only";
   const baselineDisplay = baseline !== null ? `${baseline.toFixed(1)}%` : "—";
   const baselineHint = baseline !== null ? "7-day discharge avg" : "Needs 2+ discharge cycles";

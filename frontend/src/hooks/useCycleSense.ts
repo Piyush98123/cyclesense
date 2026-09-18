@@ -188,6 +188,28 @@ export function useCycleSense() {
     });
   }, []);
 
+    // The persisted screenDaily total only updates when the screen turns off
+  // (see flushScreenOnInterval below), so on its own it looks frozen while
+  // the screen is currently on. This ticks a re-render every 30s so the UI
+  // can add the still-running interval on top of the last committed total.
+  const [liveTick, setLiveTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setLiveTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const screenDailyLive = useMemo(() => {
+    if (screenOnSinceMs.current === null) return screenDaily;
+    const today = localDateKey();
+    if (screenDaily.date !== today) return screenDaily; // new day; next flush resets it correctly
+    const liveMinutes = Math.max(0, (Date.now() - screenOnSinceMs.current) / 60000);
+    return {
+      date: screenDaily.date,
+      totalOnMinutes: Number((screenDaily.totalOnMinutes + liveMinutes).toFixed(2)),
+      longestOnMinutes: Math.max(screenDaily.longestOnMinutes, Number(liveMinutes.toFixed(2))),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screenDaily, liveTick]);
   const handleScreenChange = useCallback((change: ScreenChange) => {
     if (change.screenOn) {
       if (screenOnSinceMs.current === null) screenOnSinceMs.current = change.timestamp;
@@ -306,6 +328,7 @@ export function useCycleSense() {
       baselineDeviation: null,
       note: null,
       tags: null,
+      curve: null,
     };
     // Reset per-session screen accumulators; keep the running "on" stopwatch
     // so if the screen was already on when the session began, we still credit
@@ -409,9 +432,18 @@ export function useCycleSense() {
         // ignore usage-events failures
       }
     }
+    // Slice the shared rolling telemetry buffer down to just this session's
+    // window — samples already exist in memory (native ring buffer mirrored
+    // every 60s), so no new native code is needed to capture this.
+    const sessionStartMs = new Date(openSession.startAt).getTime();
+    const curve = samples
+      .filter((s) => s.timestamp >= sessionStartMs && s.levelPercent >= 0)
+      .map((s) => ({ t: s.timestamp, level: s.levelPercent }))
+      .sort((a, b) => a.t - b.t);
+
     let capped: Session[] = [];
     setSessions((current) => {
-      capped = capSessions(current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation } : session));
+      capped = capSessions(current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation, curve: curve.length > 0 ? curve : null } : session));
       return capped;
     });
     await persistSessions(capped);
@@ -424,7 +456,7 @@ export function useCycleSense() {
     if (NATIVE_ACTIVE) {
       await CycleSenseNative.stopSessionForeground();
     }
-  }, [chargers, flushScreenOnInterval, openSession, persistChargers, persistSessions, sessions, status]);
+  }, [chargers, flushScreenOnInterval, openSession, persistChargers, persistSessions, samples, sessions, status]);
 
   // Auto-track plug/unplug: plug in → open a charge session; unplug → close
   // whatever session is running. The user can still tap the Dashboard button
@@ -647,6 +679,7 @@ export function useCycleSense() {
     samples,
     refreshSamples,
     screenDaily,
+    screenDailyLive,
     baseline,
     timeToFullMinutes,
     ready,
