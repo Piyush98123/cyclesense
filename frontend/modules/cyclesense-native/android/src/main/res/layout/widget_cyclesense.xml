@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+  android:layout_width="match_parent"
+  android:layout_height="match_parent"
+  android:orientation="vertical"
+  android:background="@drawable/widget_cyclesense_bg"
+  android:padding="14dp">
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical">
+    <TextView
+      android:id="@+id/widget_cyclesense_kicker"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:text="@string/widget_cyclesense_title"
+      android:textColor="#F26B2E"
+      android:textSize="11sp"
+      android:letterSpacing="0.12"
+      android:textAllCaps="true"
+      android:textStyle="bold" />
+    <TextView
+      android:id="@+id/widget_cyclesense_mode"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:textColor="#6E7278"
+      android:textSize="10sp"
+      android:textAllCaps="true"
+      android:letterSpacing="0.08" />
+  </LinearLayout>
+
+  <TextView
+    android:id="@+id/widget_cyclesense_level"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:textColor="#F2F2F2"
+    android:textSize="32sp"
+    android:textStyle="bold"
+    android:text="--%" />
+
+  <LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:layout_marginTop="4dp">
+    <TextView
+      android:id="@+id/widget_cyclesense_rate"
+      android:layout_width="0dp"
+      android:layout_height="wrap_content"
+      android:layout_weight="1"
+      android:textColor="#B0B4B8"
+      android:textSize="12sp"
+      android:text="Awaiting data" />
+    <TextView
+      android:id="@+id/widget_cyclesense_charger"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:textColor="#F26B2E"
+      android:textSize="12sp" />
+  </LinearLayout>
+
+</LinearLayout>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="widget_cyclesense_description">CycleSense — battery glance</string>
+  <string name="widget_cyclesense_title">CycleSense</string>
+  <string name="widget_cyclesense_placeholder">Open CycleSense to warm up widget data</string>
+</resources>

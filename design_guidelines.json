@@ -1,0 +1,137 @@
+{
+  "app_name": "CycleSense",
+  "personality": "7 Dark-First Utility DARK",
+  "personality_one_liner": "A precision device utility command center delivering clinical battery health insights, live power telemetry, and non-alarmist cycle tracking with zero visual clutter.",
+  "color": {
+    "surface": "#121417",
+    "onSurface": "#F0F2F5",
+    "surfaceSecondary": "#1A1D23",
+    "onSurfaceSecondary": "#C5CBCF",
+    "surfaceTertiary": "#22262E",
+    "onSurfaceTertiary": "#9FA6B2",
+    "surfaceInverse": "#FFFFFF",
+    "onSurfaceInverse": "#121417",
+    "brand": "#FF6B2B",
+    "brandPrimary": "#FF6B2B",
+    "onBrandPrimary": "#121417",
+    "brandSecondary": "#D95212",
+    "onBrandSecondary": "#FFFFFF",
+    "brandTertiary": "#2B1A12",
+    "onBrandTertiary": "#FF9466",
+    "success": "#22C55E",
+    "onSuccess": "#121417",
+    "warning": "#F59E0B",
+    "onWarning": "#121417",
+    "error": "#EF4444",
+    "onError": "#FFFFFF",
+    "info": "#3B82F6",
+    "onInfo": "#FFFFFF",
+    "border": "#2A2F3A",
+    "borderStrong": "#FF6B2B",
+    "divider": "#1F242C",
+    "muted": "#8A92A0",
+    "onBrand": "#121417"
+  },
+  "typography": {
+    "displayFontFamily": "BarlowCondensed_600SemiBold",
+    "textFontFamily": "Satoshi-Regular",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous and operational padding: compact headers, touch-friendly 56pt rows, pinned bottom CTAs with safe area clearance.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "bottom_tabs",
+  "icon_set": "MaterialCommunityIcons",
+  "glassmorphism": {
+    "enabled": false,
+    "do's": [
+      "Use crisp dividers and tonal surface separation for high data density readability",
+      "Keep telemetry graphs high-contrast and glanceable"
+    ],
+    "dont's": [
+      "Do not use heavy blur or glass effects that reduce telemetry glanceability in low light"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Dashboard",
+      "purpose": "Primary command center featuring live battery percentage, charging/discharging state, voltage, temperature, and modular quick stats.",
+      "states": {
+        "loading": "Centered pulse spinner over obsidian surface with skeleton metric cards",
+        "empty": "Clean diagnostic prompt with retry trigger if battery metrics fail to bind",
+        "error": "Readable telemetry error banner with instant retry action"
+      },
+      "layout": "Vertical scroll container with top live status card, grid of quick telemetry widgets (Voltage, Temp, Power, Health), live charging curve graph preview, and sticky alert ticker."
+    },
+    {
+      "name": "Timeline",
+      "purpose": "Unified charge and discharge session history with granular timestamps and event tags.",
+      "states": {
+        "loading": "Skeleton list rows simulating charging intervals",
+        "empty": "Battery outline icon + 'No charging sessions recorded yet. Plug in your device to begin tracking.' + 'Start Test Session' CTA",
+        "error": "Failed to read usage stats notification with refresh button"
+      },
+      "layout": "Chronological session stream with collapsible day/week grouping, visual charge-speed indicators, and quick-note tag pills."
+    },
+    {
+      "name": "Analytics",
+      "purpose": "Raw-sample charge/discharge curves, battery health trends, and daily/weekly/monthly digests.",
+      "states": {
+        "loading": "Pulsing chart skeleton lines",
+        "empty": "Graph icon + 'Accumulating power data. Check back after your first full charge cycle.'",
+        "error": "Chart rendering error indicator with retry"
+      },
+      "layout": "Tabbed analytics views (24h curve, 30-day health trend, digest stats) with interactive scrubber points and confidence labels."
+    },
+    {
+      "name": "Settings",
+      "purpose": "Customizable dashboard cards, charging alert thresholds, sound cue settings, always-on status mode, and CSV export.",
+      "states": {
+        "loading": "List skeleton",
+        "empty": "N/A",
+        "error": "Settings save error alert"
+      },
+      "layout": "Categorized preference list with switches for sound cues, always-on display simulation, alert percentage sliders, and CSV export action."
+    }
+  ],
+  "images": {
+    "hero_battery_ambient": {
+      "url": "https://images.unsplash.com/photo-1779426598955-c206a62474af?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwYmF0dGVyeSUyMGljb24lMjBhYnN0cmFjdCUyMHRlY2glMjBjbGVhbnxlbnwwfHx8fDE3ODk2NjM0MjR8MA&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1779426598955-c206a62474af?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxtaW5pbWFsaXN0JTIwYmF0dGVyeSUyMGljb24lMjBhYnN0cmFjdCUyMHRlY2glMjBjbGVhbnxlbnwwfHx8fDE3ODk2NjM0MjR8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Minimalist abstract dark tech glow representing battery health"
+    }
+  },
+  "instructions_to_main_agent": "Implement CycleSense as an Android-first Expo React Native app using Personality 7 (Dark-First Utility DARK) with warm ember/signal orange accent (#FF6B2B) and obsidian background (#121417). Support capability-aware graceful fallbacks for native modules (BatteryManager, UsageStatsManager, WorkManager, SoundPool, Always-On Display, Glance widgets) so the UI remains robust and responsive in Expo Go. Include live battery metrics (percentage, charging/discharging state, voltage, temperature, current draw, health score out of 10), unified charge/discharge timeline with notes/tags, raw-sample curve graphs, battery health trend charts, daily/weekly/monthly digests, customizable dashboard cards, charging alerts with sound cue toggles, CSV export, confidence labels for estimates, and non-alarmist observations. Ensure touch targets are >= 44x44pt, typography weights do not exceed 500 except for condensed display numbers, and state management handles loading, empty, and error views correctly across all screens."
+}
