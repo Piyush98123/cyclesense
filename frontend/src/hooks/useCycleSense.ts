@@ -353,6 +353,10 @@ export function useCycleSense() {
     }
     if (NATIVE_ACTIVE) {
       await CycleSenseNative.startSessionForeground(next.mode, next.startLevel);
+      // Home-screen launcher icon reflects real state: green while charging,
+      // amber while draining. Cosmetic only - failures here never block
+      // session tracking (see setDynamicIcon's own try/catch on the native side).
+      await CycleSenseNative.setDynamicIconState(isCharge);
     }
   }, [chargers, persistSessions, status]);
 
@@ -383,6 +387,7 @@ export function useCycleSense() {
         plugLabel: plugLabel && plugLabel !== "unplugged" ? plugLabel : "unknown",
         peakMa: peakCurrent / 1000,
         voltageMv: openSession.startVoltageMv ?? status.voltageMv ?? null,
+        durationMinutes,
       };
       const matched = findMatchingCharger(fingerprint, chargers);
       if (matched) {
@@ -433,14 +438,13 @@ export function useCycleSense() {
       }
     }
     // Slice the shared rolling telemetry buffer down to just this session's
-    // window — samples already exist in memory (native ring buffer mirrored
+    // window - samples already exist in memory (native ring buffer mirrored
     // every 60s), so no new native code is needed to capture this.
     const sessionStartMs = new Date(openSession.startAt).getTime();
     const curve = samples
       .filter((s) => s.timestamp >= sessionStartMs && s.levelPercent >= 0)
       .map((s) => ({ t: s.timestamp, level: s.levelPercent }))
       .sort((a, b) => a.t - b.t);
-
     let capped: Session[] = [];
     setSessions((current) => {
       capped = capSessions(current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation, curve: curve.length > 0 ? curve : null } : session));
@@ -521,6 +525,11 @@ export function useCycleSense() {
         const next: PersistedPowerState = { state: observed, atIso: new Date().toISOString(), levelPercent: status.level === null ? null : Math.round(status.level * 100) };
         if (!persisted || persisted.state !== next.state) {
           await storage.setItem(POWER_STATE_STORAGE_KEY, JSON.stringify(next));
+        }
+        // Icon should match reality from the moment the app first observes
+        // it too, not just on the next plug/unplug transition.
+        if (NATIVE_ACTIVE) {
+          await CycleSenseNative.setDynamicIconState(observed === "CHARGING");
         }
       } catch {
         // reconciliation is best-effort

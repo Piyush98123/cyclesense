@@ -19,6 +19,7 @@ export type BatteryStatus = {
 };
 
 export type ChargerCategory = "fast" | "standard" | "slow" | "trickle";
+
 export type CurvePoint = { t: number; level: number };
 
 export type Session = {
@@ -99,29 +100,11 @@ export type Charger = {
   plugLabel: string; // "ac" | "usb" | "wireless" | "unknown"
   avgPeakMa: number;
   avgVoltageMv: number | null;
+  avgDurationMinutes: number | null;
   uses: number;
   createdAt: string;
   lastUsedAt: string;
 };
-
-// export type CycleSettings = {
-//   soundCues: boolean;
-//   chargeAlert: number;
-//   dischargeAlert: number;
-//   alwaysOn: boolean;
-//   backgroundSampling: boolean;
-//   usageStatsEnabled: boolean;
-// };
-
-// export const defaultSettings: CycleSettings = {
-//   soundCues: true,
-//   chargeAlert: 90,
-//   dischargeAlert: 20,
-//   alwaysOn: false,
-//   backgroundSampling: false,
-//   usageStatsEnabled: false,
-// };
-
 
 export type DashboardCardId = "status" | "telemetry" | "curve";
 
@@ -135,7 +118,6 @@ export type CycleSettings = {
   soundCues: boolean;
   chargeAlert: number;
   dischargeAlert: number;
-  alwaysOn: boolean;
   backgroundSampling: boolean;
   usageStatsEnabled: boolean;
   dashboardOrder: DashboardCardId[];
@@ -145,12 +127,12 @@ export const defaultSettings: CycleSettings = {
   soundCues: true,
   chargeAlert: 90,
   dischargeAlert: 20,
-  alwaysOn: false,
   backgroundSampling: false,
   usageStatsEnabled: false,
   dashboardOrder: ["status", "telemetry", "curve"],
 };
 
+/** Swaps a card with its neighbor in the given direction. Pure — easy to unit test. */
 export function moveDashboardCard(order: DashboardCardId[], id: DashboardCardId, direction: -1 | 1): DashboardCardId[] {
   const index = order.indexOf(id);
   const target = index + direction;
@@ -165,7 +147,13 @@ export const SETTINGS_STORAGE_KEY = "cyclesense:settings";
 export const CHARGER_STORAGE_KEY = "cyclesense:chargers";
 export const POWER_STATE_STORAGE_KEY = "cyclesense:power-state";
 export const SCREEN_DAILY_STORAGE_KEY = "cyclesense:screen-daily";
-export const SESSION_HISTORY_LIMIT = 5;
+// Retention cap for on-device session history. Raised from the original 5
+// specifically to make the daily/5-day digest and trend comparison
+// meaningful: each charge+discharge pair consumes 2 slots, so 5 covered
+// well under a day of real history. 40 comfortably covers a trailing
+// ~20-day window (roughly 2 sessions/day) - enough for a full 5-day-vs-
+// previous-5-day trend with real headroom, at negligible AsyncStorage cost.
+export const SESSION_HISTORY_LIMIT = 40;
 
 export function powerStateFromMode(mode: BatteryMode): PowerState {
   if (mode === "charging" || mode === "full") return "CHARGING";
@@ -231,7 +219,7 @@ export function classifyCharger(input: {
  * Falls back to a straight line between start/end when there's no captured
  * curve (older sessions recorded before this feature existed).
  */
-export function normalizeCurve(session: Session, points = 20): number[] {
+export function normalizeCurve(session: Session, points: number = 20): number[] {
   const raw = session.curve;
   if (!raw || raw.length < 2) {
     const start = session.startLevel;

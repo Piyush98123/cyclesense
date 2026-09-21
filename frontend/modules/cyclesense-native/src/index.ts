@@ -24,6 +24,7 @@ type NativeSurface = {
   stopSessionForeground(): Promise<boolean>;
   isScreenOn(): Promise<boolean>;
   setSoundCuesEnabled(enabled: boolean): Promise<boolean>;
+   setDynamicIconState(charging: boolean): Promise<boolean>;
   updateWidget(levelPercent: number, ratePerHour: number, mode: string | null, chargerName: string | null): Promise<boolean>;
   addListener(event: string, listener: (event: TelemetryEvent | ScreenEvent) => void): EventSubscription;
   removeListener?(event: string, listener: (event: TelemetryEvent | ScreenEvent) => void): void;
@@ -91,6 +92,10 @@ export const CycleSenseNative = {
 
   async setSoundCuesEnabled(enabled: boolean): Promise<boolean> {
     return nativeModule ? nativeModule.setSoundCuesEnabled(enabled) : false;
+  },
+
+  async setDynamicIconState(charging: boolean): Promise<boolean> {
+    return nativeModule ? nativeModule.setDynamicIconState(charging) : false;
   },
 
   async updateWidget(levelPercent: number, ratePerHour: number, mode: string | null, chargerName: string | null): Promise<boolean> {

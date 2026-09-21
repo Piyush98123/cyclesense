@@ -6,19 +6,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppHeader, ChartFrame, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
 import { isAnomaly, last24HoursOfSamples } from "@/src/data/analytics";
-import { computeDigest } from "@/src/data/digest";
+import { computeChargingHabits, computeDigest, describeChargingHabits, DigestPeriod } from "@/src/data/digest";
 import { useCycleSense } from "@/src/hooks/useCycleSense";
 import { makeStyles, useTheme } from "@/src/theme";
 
 const ranges = ["24H", "30D", "Digest"] as const;
+const digestPeriods: { id: DigestPeriod; label: string }[] = [
+  { id: "daily", label: "Today" },
+  { id: "5day", label: "5-Day" },
+];
 
 export default function Analytics() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
   const router = useRouter();
-  const { sessions, samples, screenDaily, screenDailyLive, capabilities, nativeBridgeActive, baseline } = useCycleSense();
+  const { sessions, samples, screenDailyLive, capabilities, nativeBridgeActive, baseline } = useCycleSense();
   const [range, setRange] = useState<(typeof ranges)[number]>("24H");
+  const [digestPeriod, setDigestPeriod] = useState<DigestPeriod>("daily");
   const hasCompleteCycle = sessions.some((session) => session.endAt !== null);
 
   const filteredSamples = useMemo(() => last24HoursOfSamples(samples, 24), [samples]);
@@ -40,7 +45,15 @@ export default function Analytics() {
 
   const lastDischarge = sessions.find((s) => s.mode === "discharge" && s.endAt !== null);
   const showAnomaly = lastDischarge?.baselineDeviation != null && isAnomaly(lastDischarge.baselineDeviation);
-  const digest = useMemo(() => computeDigest(sessions), [sessions]);
+  const digest = useMemo(() => computeDigest(sessions, digestPeriod), [sessions, digestPeriod]);
+  const habits = useMemo(() => computeChargingHabits(sessions), [sessions]);
+  const habitSummary = useMemo(() => describeChargingHabits(habits), [habits]);
+  // "up" means drain got faster (worse) vs the prior period of the same
+  // length - not a generic good/bad direction, so this is spelled out
+  // explicitly rather than just colored green/red.
+  const trendDetail = digest.trend.direction === "flat" || digest.trend.deltaPercent === null
+    ? "% / hour"
+    : `% / hour · ${digest.trend.direction === "up" ? "▲" : "▼"} ${Math.abs(digest.trend.deltaPercent)}% vs prior`;
 
   const curveCaption = curve
     ? `From ${filteredSamples.length} raw samples · Confidence: ${filteredSamples.length >= 24 ? "High" : "Medium"}`
@@ -71,13 +84,17 @@ export default function Analytics() {
       <Insight icon="timer-sand" label="Longest streak" value={longestStreak} detail={longestHint} />
       <Insight icon="trending-up" label="Baseline" value={baselineDisplay} detail={baselineHint} />
     </View>
-    <SectionTitle title="7-day digest" action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} />
+    <SectionTitle title={digestPeriod === "daily" ? "Today's digest" : "5-day digest"} action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} />
+    <View style={styles.periodBar}>{digestPeriods.map((item) => <Pressable testID={`digest-period-${item.id}`} key={item.id} onPress={() => setDigestPeriod(item.id)} accessibilityRole="button" accessibilityState={{ selected: digestPeriod === item.id }} style={[styles.periodButton, digestPeriod === item.id && styles.periodSelected]}><Text style={[styles.periodText, digestPeriod === item.id && styles.periodTextSelected]}>{item.label}</Text></Pressable>)}</View>
     <View testID="insights-digest" style={styles.digestGrid}>
-      <Insight icon="battery-charging-100" label="Avg drain" value={digest.averageDrain !== null ? `${digest.averageDrain}%` : "—"} detail="% / hour" />
+      <Insight icon="battery-charging-100" label="Avg drain" value={digest.averageDrain !== null ? `${digest.averageDrain}%` : "—"} detail={trendDetail} />
       <Insight icon="lightning-bolt-outline" label="Avg charge" value={digest.averageChargeMinutes !== null ? formatMinutes(digest.averageChargeMinutes) : "—"} detail="0 → full" />
       <Insight icon="atom-variant" label="Energy in" value={digest.totalMAh !== null ? `${digest.totalMAh.toFixed(0)} mAh` : "—"} detail="Sum drawn" />
       <Insight icon="calendar-clock" label="Toughest day" value={digest.worstDay ? digest.worstDay.slice(5) : "—"} detail="Highest drain" />
     </View>
+    {habitSummary ? (
+      <View style={styles.confidenceBanner}><MaterialCommunityIcons name="clock-time-four-outline" size={19} color={colors.info} /><View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Charging habits</Text><Text style={styles.bannerBody}>{habitSummary}</Text></View></View>
+    ) : null}
   </ScrollView></View>;
 }
 
@@ -93,6 +110,7 @@ function Insight({ icon, label, value, detail }: { icon: keyof typeof MaterialCo
 const useStyles = makeStyles((colors) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface }, content: { paddingHorizontal: 20, gap: 18 },
   rangeBar: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: colors.border }, rangeButton: { flex: 1, minHeight: 44, borderRadius: 9, alignItems: "center", justifyContent: "center" }, rangeSelected: { backgroundColor: colors.brandPrimary }, rangeText: { color: colors.muted, fontSize: 12, fontWeight: "600" }, rangeTextSelected: { color: colors.onBrandPrimary },
+  periodBar: { flexDirection: "row", gap: 8, marginTop: -6 }, periodButton: { minHeight: 34, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }, periodSelected: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary }, periodText: { color: colors.muted, fontSize: 12, fontWeight: "600" }, periodTextSelected: { color: colors.brandPrimary },
   confidenceBanner: { flexDirection: "row", gap: 10, backgroundColor: colors.surfaceTertiary, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 15 }, bannerCopy: { flex: 1, gap: 4 }, bannerTitle: { color: colors.onSurface, fontSize: 14, fontWeight: "500" }, bannerBody: { color: colors.onSurfaceSecondary, fontSize: 12, lineHeight: 18 },
   anomalyCard: { flexDirection: "row", gap: 10, backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.borderStrong, padding: 15 },
   anomalyTitle: { color: colors.brandPrimary, fontSize: 13, fontWeight: "600", letterSpacing: 0.3 },

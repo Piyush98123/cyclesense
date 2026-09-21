@@ -5,6 +5,7 @@ export type ChargerFingerprint = {
   plugLabel: string;
   peakMa: number;
   voltageMv: number | null;
+  durationMinutes: number | null;
 };
 
 const PLUG_ORDER = ["ac", "usb", "wireless", "unknown"] as const;
@@ -78,11 +79,18 @@ export function mergeChargerFingerprint(charger: Charger, fingerprint: ChargerFi
       : charger.avgVoltageMv == null
       ? fingerprint.voltageMv
       : weightedAverage(charger.avgVoltageMv, charger.uses, fingerprint.voltageMv);
+  const nextDuration =
+    fingerprint.durationMinutes == null
+      ? charger.avgDurationMinutes
+      : charger.avgDurationMinutes == null
+      ? fingerprint.durationMinutes
+      : weightedAverage(charger.avgDurationMinutes, charger.uses, fingerprint.durationMinutes);
   return {
     ...charger,
     uses: nextUses,
     avgPeakMa: round(nextPeak),
     avgVoltageMv: nextVoltage == null ? null : round(nextVoltage),
+    avgDurationMinutes: nextDuration == null ? null : round(nextDuration),
     lastUsedAt: new Date().toISOString(),
     // Category can drift if user swaps a cable head - keep the most recent one
     category: fingerprint.category,
@@ -99,6 +107,7 @@ export function createChargerFromFingerprint(fingerprint: ChargerFingerprint, na
     plugLabel: fingerprint.plugLabel,
     avgPeakMa: round(fingerprint.peakMa),
     avgVoltageMv: fingerprint.voltageMv == null ? null : round(fingerprint.voltageMv),
+    avgDurationMinutes: fingerprint.durationMinutes == null ? null : round(fingerprint.durationMinutes),
     uses: 1,
     createdAt: now,
     lastUsedAt: now,

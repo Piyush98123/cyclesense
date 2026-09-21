@@ -34,17 +34,43 @@ export function isAnomaly(deviation: number | null): boolean {
 }
 
 /**
- * Estimate the minutes remaining to reach 100% charge based on the recent
- * raw-sample trend. Uses the last window (default: 6 samples ≈ 90 minutes
- * at 15-min cadence) to smooth out short bursts.
+ * "Why did my battery drain?" — turns the anomaly figure into a plain-language
+ * sentence rather than a bare percentage. Deliberately conservative: it only
+ * ever compares against the rolling baseline (already computed), so it never
+ * claims a specific cause — just how this session compares to normal.
  */
-export function estimateTimeToFull(
+export function describeDrainDeviation(deviation: number | null, baseline: number | null): string | null {
+  if (deviation === null || baseline === null) return null;
+  const magnitude = Math.abs(deviation);
+  if (magnitude < 8) return "About the same as your usual drain rate.";
+  const direction = deviation > 0 ? "faster" : "slower";
+  const roundedMagnitude = Math.round(magnitude);
+  const severity = magnitude >= ANOMALY_THRESHOLD_PERCENT ? "notably" : "somewhat";
+  return `This session drained ${severity} ${direction} than usual — about ${roundedMagnitude}% ${direction} than your ${BASELINE_DAYS}-day average.`;
+}
+
+const TAPER_START_PERCENT = 80;
+// Heuristic, not measured per-device: li-ion charging tapers hard in the
+// constant-voltage phase after ~80%, so the last stretch charges markedly
+// slower than the constant-current phase before it. 0.4 means "assume the
+// taper phase charges at 40% of the pre-taper rate" - conservative enough to
+// avoid the old bug (a fast early rate projected linearly all the way to
+// 100%, which was always an underestimate), without needing real per-device
+// curve data we don't have.
+const TAPER_RATE_FACTOR = 0.4;
+
+export type ChargeProjection = {
+  minutes: number;
+  /** True when the projection had to model the post-80% slowdown, i.e. the
+   *  estimate is a heuristic blend rather than a plain rate extrapolation. */
+  crossesTaper: boolean;
+};
+
+function recentChargeRatePerMinute(
   samples: NativeBatteryTelemetry[] | null | undefined,
-  currentLevelPercent: number,
-  windowSize: number = 6,
+  windowSize: number,
 ): number | null {
   if (!samples || samples.length < 2) return null;
-  if (currentLevelPercent >= 100) return 0;
   const recent = samples.slice(-windowSize).filter((s) => s.levelPercent >= 0);
   if (recent.length < 2) return null;
   const first = recent[0];
@@ -52,9 +78,73 @@ export function estimateTimeToFull(
   const deltaLevel = last.levelPercent - first.levelPercent;
   const deltaMs = last.timestamp - first.timestamp;
   if (deltaLevel <= 0 || deltaMs <= 0) return null;
-  const perMinute = deltaLevel / (deltaMs / 60000);
-  const remaining = 100 - currentLevelPercent;
-  return Math.round(remaining / perMinute);
+  return deltaLevel / (deltaMs / 60000);
+}
+
+/**
+ * Core shared projection: how long from currentLevelPercent to targetPercent,
+ * given the recently observed charge rate. Both estimateTimeToFull and
+ * estimateTimeToTarget are thin wrappers over this, so time-to-100% and
+ * time-to-your-alert-threshold can never silently drift apart or duplicate
+ * the same (buggy) linear-extrapolation logic independently.
+ */
+export function estimateChargeTimeToTarget(
+  samples: NativeBatteryTelemetry[] | null | undefined,
+  currentLevelPercent: number,
+  targetPercent: number,
+  windowSize: number = 6,
+): ChargeProjection | null {
+  const target = Math.min(100, targetPercent);
+  if (target <= currentLevelPercent) return { minutes: 0, crossesTaper: false };
+
+  const perMinute = recentChargeRatePerMinute(samples, windowSize);
+  if (perMinute === null || perMinute <= 0) return null;
+
+  if (currentLevelPercent >= TAPER_START_PERCENT || target <= TAPER_START_PERCENT) {
+    // Either already charging in the tapered zone (recent rate already
+    // reflects that), or the whole projection stays below the taper
+    // boundary - a plain linear projection is accurate in both cases.
+    return { minutes: Math.round((target - currentLevelPercent) / perMinute), crossesTaper: false };
+  }
+
+  // Straddles the taper boundary: fast constant-current rate up to 80%, then
+  // a deliberately-derated rate from 80% to the target.
+  const fastPortionMinutes = (TAPER_START_PERCENT - currentLevelPercent) / perMinute;
+  const taperedRate = perMinute * TAPER_RATE_FACTOR;
+  const taperPortionMinutes = (target - TAPER_START_PERCENT) / taperedRate;
+  return { minutes: Math.round(fastPortionMinutes + taperPortionMinutes), crossesTaper: true };
+}
+
+/**
+ * Estimate the minutes remaining to reach 100% charge. Same signature as
+ * before this fix, so every existing caller keeps working - only the
+ * accuracy near the 80%+ taper zone changed (it no longer systematically
+ * underestimates by projecting the fast pre-taper rate all the way to 100%).
+ */
+export function estimateTimeToFull(
+  samples: NativeBatteryTelemetry[] | null | undefined,
+  currentLevelPercent: number,
+  windowSize: number = 6,
+): number | null {
+  if (currentLevelPercent >= 100) return 0;
+  const projection = estimateChargeTimeToTarget(samples, currentLevelPercent, 100, windowSize);
+  return projection ? projection.minutes : null;
+}
+
+/**
+ * Estimate the minutes remaining to reach any target percent - typically the
+ * user's own charge-alert threshold, so "time to full" and "time to my
+ * alert" can both be shown without maintaining two separate estimators.
+ */
+export function estimateTimeToTarget(
+  samples: NativeBatteryTelemetry[] | null | undefined,
+  currentLevelPercent: number,
+  targetPercent: number,
+  windowSize: number = 6,
+): number | null {
+  if (currentLevelPercent >= targetPercent) return 0;
+  const projection = estimateChargeTimeToTarget(samples, currentLevelPercent, targetPercent, windowSize);
+  return projection ? projection.minutes : null;
 }
 
 export function formatTimeToFull(minutes: number | null): string {
@@ -64,6 +154,17 @@ export function formatTimeToFull(minutes: number | null): string {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/**
+ * Estimated instantaneous power draw in watts, from current (µA) and voltage
+ * (mV) telemetry that's already on hand - no new native fields needed.
+ */
+export function estimateWatts(currentMicroA: number | null, voltageMv: number | null): number | null {
+  if (currentMicroA === null || voltageMv === null || voltageMv <= 0) return null;
+  const amps = Math.abs(currentMicroA) / 1_000_000;
+  const volts = voltageMv / 1000;
+  return Number((amps * volts).toFixed(1));
 }
 
 /**
