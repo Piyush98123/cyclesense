@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppHeader, ChartFrame, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
 import { isAnomaly, last24HoursOfSamples } from "@/src/data/analytics";
 import { computeChargingHabits, computeDigest, describeChargingHabits, DigestPeriod } from "@/src/data/digest";
+import { computeHealthTrend } from "@/src/data/health";
 import { useCycleSense } from "@/src/hooks/useCycleSense";
 import { makeStyles, useTheme } from "@/src/theme";
 
@@ -21,7 +22,7 @@ export default function Analytics() {
   const { colors } = useTheme();
   const styles = useStyles();
   const router = useRouter();
-  const { sessions, samples, screenDailyLive, capabilities, nativeBridgeActive, baseline } = useCycleSense();
+  const { sessions, samples, screenDailyLive, capabilities, nativeBridgeActive, baseline, status, batteryHealth } = useCycleSense();
   const [range, setRange] = useState<(typeof ranges)[number]>("24H");
   const [digestPeriod, setDigestPeriod] = useState<DigestPeriod>("daily");
   const hasCompleteCycle = sessions.some((session) => session.endAt !== null);
@@ -32,6 +33,15 @@ export default function Analytics() {
     if (filteredSamples.length === 0) return undefined;
     return filteredSamples.map((s) => (s.levelPercent >= 0 ? s.levelPercent : s.level >= 0 ? s.level * 100 : 0));
   }, [range, filteredSamples]);
+  // Real capacity-vs-design-capacity trend (see src/data/health.ts) rather
+  // than reusing the 24H `curve` variable, which is always undefined
+  // outside 24H mode - that was why this chart previously rendered empty
+  // for every 30D view regardless of how much session history existed.
+  const healthTrend = useMemo(
+    () => computeHealthTrend(sessions, status.designCapacityMah),
+    [sessions, status.designCapacityMah],
+  );
+  const chartData = range === "30D" ? (healthTrend.length > 0 ? healthTrend : undefined) : curve;
 
   const rateSum = sessions.reduce((acc, s) => (s.rate !== null && s.mode === "discharge" ? acc + s.rate : acc), 0);
   const rateCount = sessions.filter((s) => s.rate !== null && s.mode === "discharge").length;
@@ -55,11 +65,17 @@ export default function Analytics() {
     ? "% / hour"
     : `% / hour · ${digest.trend.direction === "up" ? "▲" : "▼"} ${Math.abs(digest.trend.deltaPercent)}% vs prior`;
 
-  const curveCaption = curve
-    ? `From ${filteredSamples.length} raw samples · Confidence: ${filteredSamples.length >= 24 ? "High" : "Medium"}`
-    : nativeBridgeActive
-      ? "Waiting for background samples"
-      : "Native build required for raw samples";
+  const curveCaption = range === "30D"
+    ? (healthTrend.length > 0
+        ? `Estimated from discharge history · Confidence: ${batteryHealth.confidence}`
+        : status.designCapacityMah
+          ? "Needs a few full discharge cycles"
+          : "Design capacity unavailable on this device")
+    : curve
+      ? `From ${filteredSamples.length} raw samples · Confidence: ${filteredSamples.length >= 24 ? "High" : "Medium"}`
+      : nativeBridgeActive
+        ? "Waiting for background samples"
+        : "Native build required for raw samples";
 
   return <View style={styles.screen}><ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 28 }]} showsVerticalScrollIndicator={false}>
     <AppHeader title="Insights" subtitle="Raw samples, clear patterns" />
@@ -75,14 +91,15 @@ export default function Analytics() {
     ) : (
       <View style={styles.confidenceBanner}><MaterialCommunityIcons name="information-outline" size={19} color={colors.info} /><View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Confidence-aware analytics</Text><Text style={styles.bannerBody}>CycleSense separates raw measurements from estimates and always shows the confidence level.</Text></View></View>
     )}
-    {!hasCompleteCycle && !curve ? <EmptyPanel icon="chart-timeline-variant" title="Accumulating power data" body="Complete your first charge or discharge session to unlock curves, health trends, and baseline comparisons." action="View timeline" onAction={() => router.push("/(tabs)/timeline")} /> : null}
-    <SectionTitle title={range === "Digest" ? "Period digest" : range === "30D" ? "Health trend" : "Cycle curve"} action={curve ? `${filteredSamples.length} pts` : hasCompleteCycle ? "Session summary" : "Awaiting data"} />
-    <ChartFrame label={range === "Digest" ? "Average drain rate" : range === "30D" ? "Battery health estimate" : "Charge / discharge"} caption={curveCaption} data={curve} />
+    {!hasCompleteCycle && !curve && healthTrend.length === 0 ? <EmptyPanel icon="chart-timeline-variant" title="Accumulating power data" body="Complete your first charge or discharge session to unlock curves, health trends, and baseline comparisons." action="View timeline" onAction={() => router.push("/(tabs)/timeline")} /> : null}
+    <SectionTitle title={range === "Digest" ? "Period digest" : range === "30D" ? "Health trend" : "Cycle curve"} action={range === "30D" ? (healthTrend.length > 0 ? `${healthTrend.length} pts` : "Awaiting data") : curve ? `${filteredSamples.length} pts` : hasCompleteCycle ? "Session summary" : "Awaiting data"} />
+    <ChartFrame label={range === "Digest" ? "Average drain rate" : range === "30D" ? "Battery health estimate" : "Charge / discharge"} caption={curveCaption} data={chartData} />
     <View style={styles.insightGrid}>
       <Insight icon="speedometer" label="Average drain" value={averageDrain} detail="% / hour" />
       <Insight icon="monitor-cellphone" label="Screen-on time" value={screenTotal} detail={screenTotalHint} />
       <Insight icon="timer-sand" label="Longest streak" value={longestStreak} detail={longestHint} />
       <Insight icon="trending-up" label="Baseline" value={baselineDisplay} detail={baselineHint} />
+      <Insight icon="heart-pulse" label="Battery health" value={batteryHealth.healthPercent !== null ? `${batteryHealth.healthPercent}%` : "—"} detail={batteryHealth.healthPercent !== null ? `Estimated · ${batteryHealth.confidence}` : status.designCapacityMah ? "Needs more history" : "Unavailable on device"} />
     </View>
     <SectionTitle title={digestPeriod === "daily" ? "Today's digest" : "5-day digest"} action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} />
     <View style={styles.periodBar}>{digestPeriods.map((item) => <Pressable testID={`digest-period-${item.id}`} key={item.id} onPress={() => setDigestPeriod(item.id)} accessibilityRole="button" accessibilityState={{ selected: digestPeriod === item.id }} style={[styles.periodButton, digestPeriod === item.id && styles.periodSelected]}><Text style={[styles.periodText, digestPeriod === item.id && styles.periodTextSelected]}>{item.label}</Text></Pressable>)}</View>

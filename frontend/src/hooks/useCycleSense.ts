@@ -27,6 +27,7 @@ import {
 } from "@/src/data/cyclesense";
 import { detectCapabilities, NO_CAPABILITIES } from "@/src/data/capabilities";
 import { baselineDeviation, computeBaseline, computeMAhDelta, estimateTimeToFull } from "@/src/data/analytics";
+import { computeBatteryHealth } from "@/src/data/health";
 import {
   ChargerFingerprint,
   createChargerFromFingerprint,
@@ -91,6 +92,8 @@ function mapNativeStatus(telemetry: NativeBatteryTelemetry): BatteryStatus {
     healthLabel: telemetry.healthLabel ?? null,
     pluggedLabel: telemetry.pluggedLabel ?? null,
     nativeBridge: true,
+    cycleCount: telemetry.cycleCount >= 0 ? telemetry.cycleCount : null,
+    designCapacityMah: telemetry.designCapacityMah > 0 ? telemetry.designCapacityMah : null,
   };
 }
 
@@ -630,6 +633,10 @@ export function useCycleSense() {
   const dismissChargerGreeting = useCallback(() => setChargerGreeting(null), []);
 
   const baseline = useMemo(() => computeBaseline(sessions), [sessions]);
+  const batteryHealth = useMemo(
+    () => computeBatteryHealth(sessions, status.designCapacityMah),
+    [sessions, status.designCapacityMah],
+  );
   const timeToFullMinutes = useMemo(() => {
     const isCharging = status.mode === "charging";
     if (!isCharging) return null;
@@ -690,6 +697,7 @@ export function useCycleSense() {
     screenDaily,
     screenDailyLive,
     baseline,
+    batteryHealth,
     timeToFullMinutes,
     ready,
     openSession,

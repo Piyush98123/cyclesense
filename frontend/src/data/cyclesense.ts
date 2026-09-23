@@ -16,6 +16,8 @@ export type BatteryStatus = {
   healthLabel?: string | null;
   pluggedLabel?: string | null;
   nativeBridge?: boolean;
+  cycleCount?: number | null;
+  designCapacityMah?: number | null;
 };
 
 export type ChargerCategory = "fast" | "standard" | "slow" | "trickle";
@@ -80,6 +82,8 @@ export type Capabilities = {
   health: boolean;
   rawSamples: boolean;
   screenTracking: boolean;
+  cycleCount: boolean;
+  designCapacity: boolean;
 };
 
 export const capabilityLabels: Record<keyof Capabilities, string> = {
@@ -91,6 +95,8 @@ export const capabilityLabels: Record<keyof Capabilities, string> = {
   health: "Battery health",
   rawSamples: "Raw samples",
   screenTracking: "Screen tracking",
+  cycleCount: "Cycle count",
+  designCapacity: "Design capacity",
 };
 
 export type Charger = {

@@ -14,7 +14,7 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
-  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings, samples } = useCycleSense();
+  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings, samples, batteryHealth } = useCycleSense();
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
   useEffect(() => {
@@ -34,8 +34,20 @@ export default function Dashboard() {
   const powerDrawHint = status.currentNowMicroA != null ? (status.currentNowMicroA >= 0 ? "Charging into battery" : "Drawing from battery") : "Requires native bridge";
   const temperature = status.temperatureCelsius != null ? `${status.temperatureCelsius.toFixed(1)}°C` : "—";
   const temperatureHint = status.temperatureCelsius != null ? "Cell temperature" : "Requires native bridge";
-  const health = status.healthLabel && status.healthLabel !== "unknown" ? status.healthLabel.replace(/_/g, " ") : "—";
-  const healthHint = status.healthLabel ? "Reported by system" : "After first cycle";
+  // Real capacity-vs-design-capacity estimate (see src/data/health.ts) rather
+  // than just relabeling the system's coarse good/overheat/dead flag. Falls
+  // back to that system label only when there isn't yet enough discharge
+  // history to produce an estimate.
+  const health = batteryHealth.healthPercent !== null
+    ? `${batteryHealth.healthPercent}%`
+    : status.healthLabel && status.healthLabel !== "unknown"
+      ? status.healthLabel.replace(/_/g, " ")
+      : "—";
+  const healthHint = batteryHealth.healthPercent !== null
+    ? `Estimated · ${batteryHealth.confidence} confidence`
+    : status.healthLabel
+      ? "Reported by system"
+      : "After first cycle";
   const fourthLabel = isCharging ? "Time to full" : status.voltageMv && status.voltageMv > 0 ? "Voltage" : "Since unplugged";
   const fourthValue = isCharging
     ? formatTimeToFull(timeToFullMinutes)

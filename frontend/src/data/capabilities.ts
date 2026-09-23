@@ -21,6 +21,8 @@ export function detectCapabilities(
       health: false,
       rawSamples: false,
       screenTracking: false,
+      cycleCount: false,
+      designCapacity: false,
     };
   }
   return {
@@ -32,6 +34,8 @@ export function detectCapabilities(
     health: telemetry.healthLabel !== "unknown" && telemetry.healthLabel !== undefined,
     rawSamples: true,
     screenTracking: true,
+    cycleCount: telemetry.cycleCount != null && telemetry.cycleCount >= 0,
+    designCapacity: telemetry.designCapacityMah != null && telemetry.designCapacityMah > 0,
   };
 }
 
@@ -44,4 +48,6 @@ export const NO_CAPABILITIES: Capabilities = {
   health: false,
   rawSamples: false,
   screenTracking: false,
+  cycleCount: false,
+  designCapacity: false,
 };
