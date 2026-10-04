@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -8,6 +8,9 @@ import { AppHeader, ChartFrame, EmptyPanel, SectionTitle } from "@/src/component
 import { isAnomaly, last24HoursOfSamples } from "@/src/data/analytics";
 import { computeChargingHabits, computeDigest, describeChargingHabits, DigestPeriod } from "@/src/data/digest";
 import { computeHealthTrend } from "@/src/data/health";
+import { computeWeekdayWeekendPattern, computeWeeklyAppRanking, describeWeekdayWeekendPattern } from "@/src/data/screen-time";
+import { CycleSenseNative } from "@/modules/cyclesense-native/src";
+import type { NativeUsageStat } from "@/modules/cyclesense-native/src";
 import { useCycleSense } from "@/src/hooks/useCycleSense";
 import { makeStyles, useTheme } from "@/src/theme";
 
@@ -22,7 +25,7 @@ export default function Analytics() {
   const { colors } = useTheme();
   const styles = useStyles();
   const router = useRouter();
-  const { sessions, samples, screenDailyLive, capabilities, nativeBridgeActive, baseline, status, batteryHealth } = useCycleSense();
+  const { sessions, samples, screenDailyLive, capabilities, nativeBridgeActive, baseline, status, batteryHealth, settings, hasUsageStatsPermission } = useCycleSense();
   const [range, setRange] = useState<(typeof ranges)[number]>("24H");
   const [digestPeriod, setDigestPeriod] = useState<DigestPeriod>("daily");
   const hasCompleteCycle = sessions.some((session) => session.endAt !== null);
@@ -58,6 +61,34 @@ export default function Analytics() {
   const digest = useMemo(() => computeDigest(sessions, digestPeriod), [sessions, digestPeriod]);
   const habits = useMemo(() => computeChargingHabits(sessions), [sessions]);
   const habitSummary = useMemo(() => describeChargingHabits(habits), [habits]);
+
+  // Weekly per-app ranking + weekday/weekend pattern - fetched on-demand
+  // (not continuously live like telemetry) whenever this screen is viewed
+  // with usage-stats permission actually granted. Reuses the same native
+  // path (UsageStatsManager) as the existing per-session top-apps
+  // correlation, just queried over a 7-day window instead of one session.
+  const [weeklyUsageStats, setWeeklyUsageStats] = useState<NativeUsageStat[]>([]);
+  useEffect(() => {
+    if (!nativeBridgeActive || !settings.usageStatsEnabled) return;
+    let active = true;
+    (async () => {
+      const granted = await hasUsageStatsPermission();
+      if (!active || !granted) return;
+      try {
+        const stats = await CycleSenseNative.getUsageStats(7);
+        if (active) setWeeklyUsageStats(stats);
+      } catch {
+        // best-effort - leave the section showing its empty state
+      }
+    })();
+    return () => { active = false; };
+  }, [nativeBridgeActive, settings.usageStatsEnabled, hasUsageStatsPermission]);
+
+  const weeklyAppRanking = useMemo(() => computeWeeklyAppRanking(weeklyUsageStats, 5), [weeklyUsageStats]);
+  const weekdayWeekendSummary = useMemo(
+    () => describeWeekdayWeekendPattern(computeWeekdayWeekendPattern(weeklyUsageStats, 7)),
+    [weeklyUsageStats],
+  );
   // "up" means drain got faster (worse) vs the prior period of the same
   // length - not a generic good/bad direction, so this is spelled out
   // explicitly rather than just colored green/red.
@@ -112,6 +143,24 @@ export default function Analytics() {
     {habitSummary ? (
       <View style={styles.confidenceBanner}><MaterialCommunityIcons name="clock-time-four-outline" size={19} color={colors.info} /><View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Charging habits</Text><Text style={styles.bannerBody}>{habitSummary}</Text></View></View>
     ) : null}
+
+    <SectionTitle title="Weekly screen time" action={weeklyAppRanking.length > 0 ? "Last 7 days" : "Awaiting data"} />
+    {!settings.usageStatsEnabled ? (
+      <EmptyPanel icon="apps" title="Usage access not enabled" body="Turn on App usage stats in Settings to see which apps used your screen time this week." action="Open settings" onAction={() => router.push("/(tabs)/settings")} />
+    ) : weeklyAppRanking.length === 0 ? (
+      <EmptyPanel icon="apps" title="Building this week's picture" body="Come back after a day or two of normal use to see your top apps and weekday/weekend pattern." />
+    ) : <>
+      <View style={styles.topApps}>{weeklyAppRanking.map((app, index) => (
+        <View key={app.packageName} style={styles.topAppRow}>
+          <View style={styles.topAppRank}><Text style={styles.topAppRankText}>{index + 1}</Text></View>
+          <View style={styles.topAppCopy}><Text style={styles.topAppName}>{app.label}</Text><Text style={styles.topAppMeta}>This week</Text></View>
+          <Text style={styles.topAppValue}>{formatMinutes(app.totalMinutes)}</Text>
+        </View>
+      ))}</View>
+      {weekdayWeekendSummary ? (
+        <View style={styles.confidenceBanner}><MaterialCommunityIcons name="calendar-week" size={19} color={colors.info} /><View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Weekday vs weekend</Text><Text style={styles.bannerBody}>{weekdayWeekendSummary}</Text></View></View>
+      ) : null}
+    </>}
   </ScrollView></View>;
 }
 
@@ -129,6 +178,7 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   rangeBar: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: colors.border }, rangeButton: { flex: 1, minHeight: 44, borderRadius: 9, alignItems: "center", justifyContent: "center" }, rangeSelected: { backgroundColor: colors.brandPrimary }, rangeText: { color: colors.muted, fontSize: 12, fontWeight: "600" }, rangeTextSelected: { color: colors.onBrandPrimary },
   periodBar: { flexDirection: "row", gap: 8, marginTop: -6 }, periodButton: { minHeight: 34, paddingHorizontal: 14, borderRadius: 8, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }, periodSelected: { backgroundColor: colors.brandTertiary, borderColor: colors.brandPrimary }, periodText: { color: colors.muted, fontSize: 12, fontWeight: "600" }, periodTextSelected: { color: colors.brandPrimary },
   confidenceBanner: { flexDirection: "row", gap: 10, backgroundColor: colors.surfaceTertiary, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 15 }, bannerCopy: { flex: 1, gap: 4 }, bannerTitle: { color: colors.onSurface, fontSize: 14, fontWeight: "500" }, bannerBody: { color: colors.onSurfaceSecondary, fontSize: 12, lineHeight: 18 },
+  topApps: { gap: 8 }, topAppRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.surfaceTertiary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 }, topAppRank: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }, topAppRankText: { color: colors.brandPrimary, fontSize: 12, fontWeight: "700" }, topAppCopy: { flex: 1, gap: 2 }, topAppName: { color: colors.onSurface, fontSize: 14, fontWeight: "500" }, topAppMeta: { color: colors.muted, fontSize: 10 }, topAppValue: { color: colors.brandPrimary, fontSize: 14, fontWeight: "600" },
   anomalyCard: { flexDirection: "row", gap: 10, backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.borderStrong, padding: 15 },
   anomalyTitle: { color: colors.brandPrimary, fontSize: 13, fontWeight: "600", letterSpacing: 0.3 },
   insightGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, digestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, insight: { width: "47%", minHeight: 126, backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 7 }, icon: { color: colors.brandPrimary }, insightLabel: { color: colors.muted, fontSize: 12 }, insightValue: { color: colors.onSurface, fontSize: 24, fontWeight: "500", marginTop: 5 }, insightDetail: { color: colors.onSurfaceTertiary, fontSize: 11 },

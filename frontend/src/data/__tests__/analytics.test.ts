@@ -8,8 +8,37 @@ import {
   estimateTimeToTarget,
   estimateWatts,
   isAnomaly,
+  isRealCurrentReading,
 } from "@/src/data/analytics";
 import { mkSample, mkSession } from "./fixtures";
+
+describe("isRealCurrentReading", () => {
+  it("rejects exactly 0 as unavailable", () => {
+    expect(isRealCurrentReading(0)).toBe(false);
+  });
+
+  it("rejects the undocumented -1 OEM sentinel", () => {
+    expect(isRealCurrentReading(-1)).toBe(false);
+  });
+
+  it("rejects implausibly large magnitudes (raw sentinel garbage)", () => {
+    expect(isRealCurrentReading(-2147483648)).toBe(false); // Int.MIN_VALUE
+    expect(isRealCurrentReading(2147483647)).toBe(false); // Int.MAX_VALUE
+  });
+
+  it("accepts a real positive (charging) reading", () => {
+    expect(isRealCurrentReading(1850000)).toBe(true);
+  });
+
+  it("accepts a real negative (discharging) reading - negative is not invalid here", () => {
+    expect(isRealCurrentReading(-850000)).toBe(true);
+  });
+
+  it("accepts a small but genuine trickle-charge reading", () => {
+    expect(isRealCurrentReading(-2)).toBe(true);
+    expect(isRealCurrentReading(2)).toBe(true);
+  });
+});
 
 describe("estimateChargeTimeToTarget - taper-aware projection", () => {
   // Charging at 1%/min (fast phase), currently at 50%.
@@ -50,6 +79,22 @@ describe("estimateChargeTimeToTarget - taper-aware projection", () => {
   it("returns null when the recent samples show no positive charge rate", () => {
     const flatSamples = [mkSample(0, 50), mkSample(60000, 50)];
     expect(estimateChargeTimeToTarget(flatSamples, 50, 100)).toBeNull();
+  });
+
+  it("returns null rather than an absurd projection when the window shows only a 1% blip", () => {
+    // This is the exact bug: a barely-moved recent window used to produce a
+    // technically-valid but meaningless near-zero rate, extrapolated into
+    // something like "81 hours to full" instead of an honest "not enough
+    // signal yet."
+    const barelyMoved = [mkSample(0, 74), mkSample(5 * 60000, 75)];
+    expect(estimateChargeTimeToTarget(barelyMoved, 74, 100)).toBeNull();
+  });
+
+  it("still projects normally once the window shows at least a 2% change", () => {
+    const enoughSignal = [mkSample(0, 74), mkSample(5 * 60000, 76)];
+    const result = estimateChargeTimeToTarget(enoughSignal, 74, 76);
+    expect(result).not.toBeNull();
+    expect(result!.minutes).toBe(5);
   });
 });
 

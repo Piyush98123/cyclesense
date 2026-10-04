@@ -23,6 +23,7 @@ export type NativeBatteryTelemetry = {
 
 export type NativeUsageStat = {
   packageName: string;
+  label: string;
   totalTimeForegroundMs: number;
   firstTimeStampMs: number;
   lastTimeStampMs: number;
@@ -33,6 +34,12 @@ export type NativeUsageEvent = {
   packageName: string;
   foregroundMs: number;
   label: string;
+};
+
+export type NativeNetworkUsageStat = {
+  packageName: string;
+  label: string;
+  totalBytes: number;
 };
 
 export type TelemetryEvent = { payload: string };

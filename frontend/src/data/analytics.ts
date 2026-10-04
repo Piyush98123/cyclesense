@@ -49,6 +49,22 @@ export function describeDrainDeviation(deviation: number | null, baseline: numbe
   return `This session drained ${severity} ${direction} than usual — about ${roundedMagnitude}% ${direction} than your ${BASELINE_DAYS}-day average.`;
 }
 
+/**
+ * BatteryManager current readings are legitimately negative during
+ * discharge, so "negative" can't mean "invalid" here the way it does for
+ * voltage/charge-counter. Android's own docs say an unsupported property
+ * returns Integer.MIN_VALUE - which the native side already guards - but
+ * some OEMs return -1 instead, against spec. This treats both known
+ * sentinels (and anything implausibly large in magnitude) as unavailable,
+ * while still passing through any real reading, discharge included.
+ */
+export function isRealCurrentReading(microAmps: number): boolean {
+  if (microAmps === 0) return false;
+  if (microAmps === -1) return false; // some OEMs use this instead of the documented Int.MIN_VALUE
+  if (Math.abs(microAmps) > 20_000_000) return false; // implausible for a phone battery (>20A) - almost certainly a raw sentinel
+  return true;
+}
+
 const TAPER_START_PERCENT = 80;
 // Heuristic, not measured per-device: li-ion charging tapers hard in the
 // constant-voltage phase after ~80%, so the last stretch charges markedly
@@ -58,6 +74,16 @@ const TAPER_START_PERCENT = 80;
 // 100%, which was always an underestimate), without needing real per-device
 // curve data we don't have.
 const TAPER_RATE_FACTOR = 0.4;
+
+// A rate computed from a barely-changed recent window is technically
+// positive but statistically meaningless - it happens most often right
+// after plugging in, or mid-trickle, when the last few samples haven't
+// moved much yet. Extrapolating that noise out to "hours remaining"
+// produces a wildly wrong-looking number instead of an honest "not enough
+// signal yet." Below this, the rate function returns null (matching the
+// existing MIN_PERCENT_DROP_FOR_ESTIMATE guard the battery-health estimate
+// already uses for the same reason).
+const MIN_PERCENT_DELTA_FOR_RATE = 2;
 
 export type ChargeProjection = {
   minutes: number;
@@ -77,7 +103,7 @@ function recentChargeRatePerMinute(
   const last = recent[recent.length - 1];
   const deltaLevel = last.levelPercent - first.levelPercent;
   const deltaMs = last.timestamp - first.timestamp;
-  if (deltaLevel <= 0 || deltaMs <= 0) return null;
+  if (deltaLevel < MIN_PERCENT_DELTA_FOR_RATE || deltaMs <= 0) return null;
   return deltaLevel / (deltaMs / 60000);
 }
 

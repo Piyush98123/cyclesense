@@ -26,7 +26,7 @@ import {
   SETTINGS_STORAGE_KEY,
 } from "@/src/data/cyclesense";
 import { detectCapabilities, NO_CAPABILITIES } from "@/src/data/capabilities";
-import { baselineDeviation, computeBaseline, computeMAhDelta, estimateTimeToFull } from "@/src/data/analytics";
+import { baselineDeviation, computeBaseline, computeMAhDelta, estimateTimeToFull, isRealCurrentReading } from "@/src/data/analytics";
 import { computeBatteryHealth } from "@/src/data/health";
 import {
   ChargerFingerprint,
@@ -85,8 +85,8 @@ function mapNativeStatus(telemetry: NativeBatteryTelemetry): BatteryStatus {
     updatedAt: new Date(telemetry.timestamp || Date.now()).toISOString(),
     temperatureCelsius: telemetry.temperatureCelsius ?? null,
     voltageMv: telemetry.voltageMv > 0 ? telemetry.voltageMv : null,
-    currentNowMicroA: telemetry.currentNowMicroA !== 0 ? telemetry.currentNowMicroA : null,
-    currentAverageMicroA: telemetry.currentAverageMicroA !== 0 ? telemetry.currentAverageMicroA : null,
+    currentNowMicroA: isRealCurrentReading(telemetry.currentNowMicroA) ? telemetry.currentNowMicroA : null,
+    currentAverageMicroA: isRealCurrentReading(telemetry.currentAverageMicroA) ? telemetry.currentAverageMicroA : null,
     chargeCounterMicroAh: telemetry.chargeCounterMicroAh > 0 ? telemetry.chargeCounterMicroAh : null,
     technology: telemetry.technology ?? null,
     healthLabel: telemetry.healthLabel ?? null,
@@ -501,10 +501,15 @@ export function useCycleSense() {
     })();
   }, [ready, status.mode, status.level, openSession, endSession, startSession, settings.soundCues]);
 
-  // Reconciliation on cold start: after the first real status observation,
-  // if the persisted power state disagrees with reality (e.g. user plugged
-  // in while the app was closed), close any stale open session and let the
-  // auto-transition effect take it from there.
+  // Reconciliation on cold start: sessions are otherwise only ever created
+  // by the auto-transition effect witnessing an actual mode CHANGE while the
+  // app is alive - which means a state the app was never alive to see the
+  // *start* of (a fresh install, or any relaunch after Android killed a
+  // backgrounded app mid-charge) would never get recorded at all. This
+  // effect adopts whatever the phone is actually doing right now as a fresh
+  // session whenever there isn't already a correctly-matching one open, so
+  // intermittent app usage can't silently produce zero recorded sessions
+  // despite real charge/discharge cycles happening.
   useEffect(() => {
     if (!ready) return;
     if (reconciledOnBoot.current) return;
@@ -516,14 +521,23 @@ export function useCycleSense() {
         const persisted = raw && raw !== "null" ? (JSON.parse(raw) as PersistedPowerState) : null;
         const observed = powerStateFromMode(status.mode);
         const open = sessions.find((s) => s.endAt === null) ?? null;
-        // Case 1: open session whose mode conflicts with reality → close it
-        if (open) {
-          const openIsCharge = open.mode === "charge";
-          const observedIsCharge = observed === "CHARGING";
-          if (openIsCharge !== observedIsCharge) {
-            await endSession();
-          }
+        const openMatchesReality = open != null && (open.mode === "charge") === (observed === "CHARGING");
+
+        // Case 1: an open session exists but conflicts with reality → close it.
+        if (open && !openMatchesReality) {
+          await endSession();
         }
+        // Case 2: nothing open correctly reflects the current real state
+        // (either nothing was open, or we just closed the one that didn't
+        // match) and the phone is actively charging or discharging right
+        // now → adopt it as a fresh session, starting from this moment.
+        // This can't recover the true start time/level of a cycle the app
+        // wasn't alive to see begin, but it's the difference between
+        // recording *something* real going forward and recording nothing.
+        if (!openMatchesReality && observed !== "IDLE") {
+          await startSession();
+        }
+
         // Persist current state so the next boot has a fresh anchor
         const next: PersistedPowerState = { state: observed, atIso: new Date().toISOString(), levelPercent: status.level === null ? null : Math.round(status.level * 100) };
         if (!persisted || persisted.state !== next.state) {
@@ -538,7 +552,7 @@ export function useCycleSense() {
         // reconciliation is best-effort
       }
     })();
-  }, [ready, status.mode, status.level, sessions, endSession]);
+  }, [ready, status.mode, status.level, sessions, endSession, startSession]);
 
   // Periodic pull of raw samples on Android. WorkManager writes into a native
   // ring buffer every 15 min - we mirror it into JS so Insights and the

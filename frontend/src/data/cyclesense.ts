@@ -57,6 +57,7 @@ export type TopApp = {
   packageName: string;
   label: string;
   minutes: number;
+  dataUsageMb?: number | null; // Phase 2 extension - only present when the NetworkStatsManager query succeeded
 };
 
 export type PowerState = "IDLE" | "CHARGING" | "DISCHARGING";

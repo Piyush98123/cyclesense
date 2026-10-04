@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppHeader, CompareChartFrame, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
 import { describeDrainDeviation } from "@/src/data/analytics";
+import { formatDataUsage } from "@/src/data/network-usage";
 import { Charger, ChargerCategory, formatClock, formatDuration, normalizeCurve, Session, SESSION_HISTORY_LIMIT } from "@/src/data/cyclesense";
 import { DIARY_TAG_PRESETS } from "@/src/data/digest";
 import { useCycleSense } from "@/src/hooks/useCycleSense";
@@ -72,7 +73,7 @@ export default function Timeline() {
         <Text style={[styles.compareToggleText, compareMode && styles.compareToggleTextOn]}>{compareMode ? "Cancel compare" : "Compare"}</Text>
       </Pressable> : null}
     </View>
-    {sessions.length === 0 ? <EmptyPanel icon="timeline-clock-outline" title="No cycles recorded yet" body="Plug in your device and CycleSense will automatically capture the charge session. Only the last 5 sessions are kept on device." /> : <View style={styles.list}>{sessions.map((session) => (
+    {sessions.length === 0 ? <EmptyPanel icon="timeline-clock-outline" title="No cycles recorded yet" body={`Plug in your device and CycleSense will automatically capture the charge session. Only the last ${SESSION_HISTORY_LIMIT} sessions are kept on device.`} /> : <View style={styles.list}>{sessions.map((session) => (
       <Pressable testID="session-row" key={session.id} onPress={() => compareMode ? toggleCompareSelection(session.id) : setSelected(session)} accessibilityRole="button" style={({ pressed }) => [styles.sessionRow, compareMode && compareIds.includes(session.id) && styles.sessionRowSelected, pressed && styles.pressed]}>
         <View style={[styles.sessionIcon, session.mode === "charge" ? styles.chargeIcon : styles.dischargeIcon]}>
           <MaterialCommunityIcons name={session.mode === "charge" ? "battery-charging" : "battery-minus-outline"} size={22} color={session.mode === "charge" ? colors.success : colors.warning} />
@@ -135,7 +136,7 @@ export default function Timeline() {
                     <Text style={styles.topAppName}>{app.label}</Text>
                     <Text style={styles.topAppMeta}>{app.packageName}</Text>
                   </View>
-                  <Text style={styles.topAppValue}>{Math.round(app.minutes)}m</Text>
+                  <Text style={styles.topAppValue}>{Math.round(app.minutes)}m{formatDataUsage(app.dataUsageMb) ? ` · ${formatDataUsage(app.dataUsageMb)}` : ""}</Text>
                 </View>
               ))}
             </View>
@@ -297,4 +298,4 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   secondaryText: { color: colors.onSurface, fontSize: 13, fontWeight: "500" },
   primaryButton: { minHeight: 44, minWidth: 70, paddingHorizontal: 16, alignItems: "center", justifyContent: "center", borderRadius: 10, backgroundColor: colors.brandPrimary },
   primaryText: { color: colors.onBrandPrimary, fontSize: 13, fontWeight: "600" },
-}));
+}))

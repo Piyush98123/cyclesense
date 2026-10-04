@@ -126,6 +126,10 @@ class CycleSenseNativeModule : Module() {
       return@AsyncFunction jsonToList(UsageStatsHelper.queryForegroundTime(context, startMs.toLong(), endMs.toLong()))
     }
 
+    AsyncFunction("getNetworkUsage") { startMs: Double, endMs: Double ->
+      return@AsyncFunction jsonToList(UsageStatsHelper.queryNetworkUsage(context, startMs.toLong(), endMs.toLong()))
+    }
+
     AsyncFunction("startSessionForeground") { mode: String, startLevel: Int ->
       val intent = Intent(context.applicationContext, SessionForegroundService::class.java).apply {
         action = SessionForegroundService.ACTION_START
