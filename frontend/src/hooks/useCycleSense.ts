@@ -26,7 +26,8 @@ import {
   SETTINGS_STORAGE_KEY,
 } from "@/src/data/cyclesense";
 import { detectCapabilities, NO_CAPABILITIES } from "@/src/data/capabilities";
-import { baselineDeviation, computeBaseline, computeMAhDelta, estimateTimeToFull } from "@/src/data/analytics";
+import { baselineDeviation, computeBaseline, computeMAhDelta, estimateTimeToFull, isRealCurrentReading } from "@/src/data/analytics";
+import { computeBatteryHealth } from "@/src/data/health";
 import {
   ChargerFingerprint,
   createChargerFromFingerprint,
@@ -84,13 +85,15 @@ function mapNativeStatus(telemetry: NativeBatteryTelemetry): BatteryStatus {
     updatedAt: new Date(telemetry.timestamp || Date.now()).toISOString(),
     temperatureCelsius: telemetry.temperatureCelsius ?? null,
     voltageMv: telemetry.voltageMv > 0 ? telemetry.voltageMv : null,
-    currentNowMicroA: telemetry.currentNowMicroA !== 0 ? telemetry.currentNowMicroA : null,
-    currentAverageMicroA: telemetry.currentAverageMicroA !== 0 ? telemetry.currentAverageMicroA : null,
+    currentNowMicroA: isRealCurrentReading(telemetry.currentNowMicroA) ? telemetry.currentNowMicroA : null,
+    currentAverageMicroA: isRealCurrentReading(telemetry.currentAverageMicroA) ? telemetry.currentAverageMicroA : null,
     chargeCounterMicroAh: telemetry.chargeCounterMicroAh > 0 ? telemetry.chargeCounterMicroAh : null,
     technology: telemetry.technology ?? null,
     healthLabel: telemetry.healthLabel ?? null,
     pluggedLabel: telemetry.pluggedLabel ?? null,
     nativeBridge: true,
+    cycleCount: telemetry.cycleCount >= 0 ? telemetry.cycleCount : null,
+    designCapacityMah: telemetry.designCapacityMah > 0 ? telemetry.designCapacityMah : null,
   };
 }
 
@@ -188,6 +191,28 @@ export function useCycleSense() {
     });
   }, []);
 
+    // The persisted screenDaily total only updates when the screen turns off
+  // (see flushScreenOnInterval below), so on its own it looks frozen while
+  // the screen is currently on. This ticks a re-render every 30s so the UI
+  // can add the still-running interval on top of the last committed total.
+  const [liveTick, setLiveTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setLiveTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const screenDailyLive = useMemo(() => {
+    if (screenOnSinceMs.current === null) return screenDaily;
+    const today = localDateKey();
+    if (screenDaily.date !== today) return screenDaily; // new day; next flush resets it correctly
+    const liveMinutes = Math.max(0, (Date.now() - screenOnSinceMs.current) / 60000);
+    return {
+      date: screenDaily.date,
+      totalOnMinutes: Number((screenDaily.totalOnMinutes + liveMinutes).toFixed(2)),
+      longestOnMinutes: Math.max(screenDaily.longestOnMinutes, Number(liveMinutes.toFixed(2))),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screenDaily, liveTick]);
   const handleScreenChange = useCallback((change: ScreenChange) => {
     if (change.screenOn) {
       if (screenOnSinceMs.current === null) screenOnSinceMs.current = change.timestamp;
@@ -306,6 +331,7 @@ export function useCycleSense() {
       baselineDeviation: null,
       note: null,
       tags: null,
+      curve: null,
     };
     // Reset per-session screen accumulators; keep the running "on" stopwatch
     // so if the screen was already on when the session began, we still credit
@@ -330,6 +356,10 @@ export function useCycleSense() {
     }
     if (NATIVE_ACTIVE) {
       await CycleSenseNative.startSessionForeground(next.mode, next.startLevel);
+      // Home-screen launcher icon reflects real state: green while charging,
+      // amber while draining. Cosmetic only - failures here never block
+      // session tracking (see setDynamicIcon's own try/catch on the native side).
+      await CycleSenseNative.setDynamicIconState(isCharge);
     }
   }, [chargers, persistSessions, status]);
 
@@ -360,6 +390,7 @@ export function useCycleSense() {
         plugLabel: plugLabel && plugLabel !== "unplugged" ? plugLabel : "unknown",
         peakMa: peakCurrent / 1000,
         voltageMv: openSession.startVoltageMv ?? status.voltageMv ?? null,
+        durationMinutes,
       };
       const matched = findMatchingCharger(fingerprint, chargers);
       if (matched) {
@@ -409,9 +440,17 @@ export function useCycleSense() {
         // ignore usage-events failures
       }
     }
+    // Slice the shared rolling telemetry buffer down to just this session's
+    // window - samples already exist in memory (native ring buffer mirrored
+    // every 60s), so no new native code is needed to capture this.
+    const sessionStartMs = new Date(openSession.startAt).getTime();
+    const curve = samples
+      .filter((s) => s.timestamp >= sessionStartMs && s.levelPercent >= 0)
+      .map((s) => ({ t: s.timestamp, level: s.levelPercent }))
+      .sort((a, b) => a.t - b.t);
     let capped: Session[] = [];
     setSessions((current) => {
-      capped = capSessions(current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation } : session));
+      capped = capSessions(current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation, curve: curve.length > 0 ? curve : null } : session));
       return capped;
     });
     await persistSessions(capped);
@@ -424,7 +463,7 @@ export function useCycleSense() {
     if (NATIVE_ACTIVE) {
       await CycleSenseNative.stopSessionForeground();
     }
-  }, [chargers, flushScreenOnInterval, openSession, persistChargers, persistSessions, sessions, status]);
+  }, [chargers, flushScreenOnInterval, openSession, persistChargers, persistSessions, samples, sessions, status]);
 
   // Auto-track plug/unplug: plug in → open a charge session; unplug → close
   // whatever session is running. The user can still tap the Dashboard button
@@ -462,10 +501,15 @@ export function useCycleSense() {
     })();
   }, [ready, status.mode, status.level, openSession, endSession, startSession, settings.soundCues]);
 
-  // Reconciliation on cold start: after the first real status observation,
-  // if the persisted power state disagrees with reality (e.g. user plugged
-  // in while the app was closed), close any stale open session and let the
-  // auto-transition effect take it from there.
+  // Reconciliation on cold start: sessions are otherwise only ever created
+  // by the auto-transition effect witnessing an actual mode CHANGE while the
+  // app is alive - which means a state the app was never alive to see the
+  // *start* of (a fresh install, or any relaunch after Android killed a
+  // backgrounded app mid-charge) would never get recorded at all. This
+  // effect adopts whatever the phone is actually doing right now as a fresh
+  // session whenever there isn't already a correctly-matching one open, so
+  // intermittent app usage can't silently produce zero recorded sessions
+  // despite real charge/discharge cycles happening.
   useEffect(() => {
     if (!ready) return;
     if (reconciledOnBoot.current) return;
@@ -477,24 +521,38 @@ export function useCycleSense() {
         const persisted = raw && raw !== "null" ? (JSON.parse(raw) as PersistedPowerState) : null;
         const observed = powerStateFromMode(status.mode);
         const open = sessions.find((s) => s.endAt === null) ?? null;
-        // Case 1: open session whose mode conflicts with reality → close it
-        if (open) {
-          const openIsCharge = open.mode === "charge";
-          const observedIsCharge = observed === "CHARGING";
-          if (openIsCharge !== observedIsCharge) {
-            await endSession();
-          }
+        const openMatchesReality = open != null && (open.mode === "charge") === (observed === "CHARGING");
+
+        // Case 1: an open session exists but conflicts with reality → close it.
+        if (open && !openMatchesReality) {
+          await endSession();
         }
+        // Case 2: nothing open correctly reflects the current real state
+        // (either nothing was open, or we just closed the one that didn't
+        // match) and the phone is actively charging or discharging right
+        // now → adopt it as a fresh session, starting from this moment.
+        // This can't recover the true start time/level of a cycle the app
+        // wasn't alive to see begin, but it's the difference between
+        // recording *something* real going forward and recording nothing.
+        if (!openMatchesReality && observed !== "IDLE") {
+          await startSession();
+        }
+
         // Persist current state so the next boot has a fresh anchor
         const next: PersistedPowerState = { state: observed, atIso: new Date().toISOString(), levelPercent: status.level === null ? null : Math.round(status.level * 100) };
         if (!persisted || persisted.state !== next.state) {
           await storage.setItem(POWER_STATE_STORAGE_KEY, JSON.stringify(next));
         }
+        // Icon should match reality from the moment the app first observes
+        // it too, not just on the next plug/unplug transition.
+        if (NATIVE_ACTIVE) {
+          await CycleSenseNative.setDynamicIconState(observed === "CHARGING");
+        }
       } catch {
         // reconciliation is best-effort
       }
     })();
-  }, [ready, status.mode, status.level, sessions, endSession]);
+  }, [ready, status.mode, status.level, sessions, endSession, startSession]);
 
   // Periodic pull of raw samples on Android. WorkManager writes into a native
   // ring buffer every 15 min - we mirror it into JS so Insights and the
@@ -589,6 +647,10 @@ export function useCycleSense() {
   const dismissChargerGreeting = useCallback(() => setChargerGreeting(null), []);
 
   const baseline = useMemo(() => computeBaseline(sessions), [sessions]);
+  const batteryHealth = useMemo(
+    () => computeBatteryHealth(sessions, status.designCapacityMah),
+    [sessions, status.designCapacityMah],
+  );
   const timeToFullMinutes = useMemo(() => {
     const isCharging = status.mode === "charging";
     if (!isCharging) return null;
@@ -647,7 +709,9 @@ export function useCycleSense() {
     samples,
     refreshSamples,
     screenDaily,
+    screenDailyLive,
     baseline,
+    batteryHealth,
     timeToFullMinutes,
     ready,
     openSession,

@@ -45,6 +45,34 @@ export function ChartFrame({ label, caption, data }: { label: string; caption: s
   return <View style={styles.chartFrame}><View style={styles.chartHeader}><Text style={styles.chartLabel}>{label}</Text><Text style={styles.chartCaption}>{caption}</Text></View><View style={styles.chartArea}>{[0, 1, 2, 3].map((row) => <View key={row} style={styles.chartGrid} />)}<View style={styles.chartBars}>{bars.map((height, index) => <View key={index} style={[styles.chartBar, { height }]} />)}</View></View></View>;
 }
 
+export function CompareChartFrame({ labelA, labelB, seriesA, seriesB }: { labelA: string; labelB: string; seriesA: number[]; seriesB: number[] }) {
+  const styles = useStyles();
+  const all = [...seriesA, ...seriesB];
+  const min = Math.min(...all);
+  const max = Math.max(...all);
+  const range = Math.max(1, max - min);
+  const barsA = seriesA.map((v) => Math.round(((v - min) / range) * 88) + 8);
+  const barsB = seriesB.map((v) => Math.round(((v - min) / range) * 88) + 8);
+  return <View style={styles.chartFrame}>
+    <View style={styles.chartHeader}>
+      <Text style={styles.chartLabel}>Session comparison</Text>
+      <View style={styles.compareLegend}>
+        <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendDotA]} /><Text style={styles.legendText}>{labelA}</Text></View>
+        <View style={styles.legendItem}><View style={[styles.legendDot, styles.legendDotB]} /><Text style={styles.legendText}>{labelB}</Text></View>
+      </View>
+    </View>
+    <View style={styles.chartArea}>
+      {[0, 1, 2, 3].map((row) => <View key={row} style={styles.chartGrid} />)}
+      <View style={styles.compareBars}>{barsA.map((heightA, index) => (
+        <View key={index} style={styles.compareSlot}>
+          <View style={[styles.chartBar, styles.compareBarA, { height: heightA }]} />
+          <View style={[styles.chartBar, styles.compareBarB, { height: barsB[index] ?? 8 }]} />
+        </View>
+      ))}</View>
+    </View>
+  </View>;
+}
+
 const useStyles = makeStyles((colors) => StyleSheet.create({
   header: { paddingTop: 8, paddingBottom: 28, gap: 10 },
   brandRow: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -82,4 +110,14 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   chartGrid: { height: 1, backgroundColor: colors.divider, width: "100%" },
   chartBars: { position: "absolute", inset: 0, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 4 },
   chartBar: { width: 8, borderRadius: 4, backgroundColor: colors.brandPrimary, opacity: 0.72 },
+    compareLegend: { flexDirection: "row", gap: 14 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendDotA: { backgroundColor: colors.brandPrimary },
+  legendDotB: { backgroundColor: colors.warning },
+  legendText: { color: colors.muted, fontSize: 11 },
+  compareBars: { position: "absolute", inset: 0, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 4 },
+  compareSlot: { flexDirection: "row", gap: 2, alignItems: "flex-end" },
+  compareBarA: { width: 5, backgroundColor: colors.brandPrimary },
+  compareBarB: { width: 5, backgroundColor: colors.warning },
 }));

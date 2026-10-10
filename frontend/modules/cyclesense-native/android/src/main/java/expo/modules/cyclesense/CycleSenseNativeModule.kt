@@ -1,9 +1,11 @@
 package expo.modules.cyclesense
 
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -102,6 +104,11 @@ class CycleSenseNativeModule : Module() {
       return@AsyncFunction true
     }
 
+    AsyncFunction("setDynamicIconState") { charging: Boolean ->
+      setDynamicIcon(charging)
+      return@AsyncFunction true
+    }
+
     AsyncFunction("hasUsageStatsPermission") {
       return@AsyncFunction UsageStatsHelper.hasPermission(context)
     }
@@ -117,6 +124,10 @@ class CycleSenseNativeModule : Module() {
 
     AsyncFunction("getUsageEvents") { startMs: Double, endMs: Double ->
       return@AsyncFunction jsonToList(UsageStatsHelper.queryForegroundTime(context, startMs.toLong(), endMs.toLong()))
+    }
+
+    AsyncFunction("getNetworkUsage") { startMs: Double, endMs: Double ->
+      return@AsyncFunction jsonToList(UsageStatsHelper.queryNetworkUsage(context, startMs.toLong(), endMs.toLong()))
     }
 
     AsyncFunction("startSessionForeground") { mode: String, startLevel: Int ->
@@ -234,6 +245,33 @@ class CycleSenseNativeModule : Module() {
       // already unregistered
     }
     screenReceiver = null
+  }
+
+  /**
+   * Flips which activity-alias is enabled so the home-screen launcher icon
+   * reflects live battery state (green while charging, amber while
+   * draining). The aliases and their icons are declared by the
+   * withDynamicIcon config plugin, which also strips the LAUNCHER
+   * intent-filter off the real MainActivity so exactly one of these two is
+   * ever the visible entry point.
+   *
+   * DONT_KILL_APP matters here: without it, Android would kill and restart
+   * the app's process every time the icon flips, which would happen on
+   * every plug/unplug - an unacceptable disruption for something this minor.
+   */
+  private fun setDynamicIcon(charging: Boolean) {
+    try {
+      val pm = context.applicationContext.packageManager
+      val chargingAlias = ComponentName(context.applicationContext.packageName, "expo.modules.cyclesense.LauncherCharging")
+      val dischargingAlias = ComponentName(context.applicationContext.packageName, "expo.modules.cyclesense.LauncherDischarging")
+      val (toEnable, toDisable) = if (charging) chargingAlias to dischargingAlias else dischargingAlias to chargingAlias
+      pm.setComponentEnabledSetting(toDisable, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+      pm.setComponentEnabledSetting(toEnable, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+    } catch (_: Throwable) {
+      // Some OEM launchers are slow to pick up component-enabled changes, and
+      // a small number outright ignore them - this is cosmetic, never worth
+      // crashing the session-tracking flow over.
+    }
   }
 
   private fun jsonToMap(json: JSONObject): Map<String, Any?> {

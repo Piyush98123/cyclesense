@@ -1,11 +1,14 @@
 package expo.modules.cyclesense
 
 import android.app.AppOpsManager
+import android.app.usage.NetworkStats
+import android.app.usage.NetworkStatsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
@@ -52,10 +55,12 @@ internal object UsageStatsHelper {
     val end = System.currentTimeMillis()
     val start = end - dayCount.coerceAtLeast(1).toLong() * 24L * 60L * 60L * 1000L
     val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end) ?: return out
+    val pm = context.packageManager
     for (entry in stats) {
       if (entry.totalTimeInForeground <= 0L) continue
       val row = JSONObject()
       row.put("packageName", entry.packageName)
+      row.put("label", resolveLabel(pm, entry.packageName))
       row.put("totalTimeForegroundMs", entry.totalTimeInForeground)
       row.put("firstTimeStampMs", entry.firstTimeStamp)
       row.put("lastTimeStampMs", entry.lastTimeStamp)
@@ -110,6 +115,64 @@ internal object UsageStatsHelper {
       row.put("packageName", pkg)
       row.put("foregroundMs", ms)
       row.put("label", resolveLabel(pm, pkg))
+      out.put(row)
+    }
+    return out
+  }
+
+  /**
+   * Per-app data usage (Wi-Fi + mobile combined, in bytes) for a session
+   * window - the Phase 2 extension to "why did it drain" that the
+   * requirements doc explicitly deferred as a later nice-to-have, separate
+   * from the core screen-time correlation.
+   *
+   * This is a genuinely fussier corner of the Android API than
+   * UsageStatsManager: NetworkStatsManager.querySummary needs a
+   * subscriberId for mobile data specifically, and requiring
+   * READ_PHONE_STATE just for that would be a disproportionate permission
+   * ask for a secondary insight. Since API 29, passing an empty string
+   * matches all mobile subscriptions without that permission - so mobile
+   * data is attempted but never required; if it throws on a given
+   * OEM/API level, this silently falls back to Wi-Fi-only rather than
+   * failing the whole feature. Wi-Fi has no such restriction.
+   */
+  fun queryNetworkUsage(context: Context, startMs: Long, endMs: Long): JSONArray {
+    val out = JSONArray()
+    if (!hasPermission(context)) return out
+    val manager = context.getSystemService(Context.NETWORK_STATS_SERVICE) as? NetworkStatsManager ?: return out
+    val pm = context.packageManager
+
+    val totalsByUid = mutableMapOf<Int, Long>()
+
+    fun accumulate(networkType: Int, subscriberId: String?) {
+      try {
+        val stats = manager.querySummary(networkType, subscriberId, startMs, endMs) ?: return
+        val bucket = NetworkStats.Bucket()
+        while (stats.hasNextBucket()) {
+          stats.getNextBucket(bucket)
+          val uid = bucket.uid
+          if (uid < 0) continue // system/removed-app buckets - nothing to attribute this to
+          val bytes = bucket.rxBytes + bucket.txBytes
+          if (bytes <= 0) continue
+          totalsByUid[uid] = (totalsByUid[uid] ?: 0L) + bytes
+        }
+        stats.close()
+      } catch (_: Throwable) {
+        // Expected on some OEM/API combinations - degrade gracefully, never crash a discharge-session close over this.
+      }
+    }
+
+    accumulate(ConnectivityManager.TYPE_WIFI, null)
+    accumulate(ConnectivityManager.TYPE_MOBILE, "")
+
+    val ordered = totalsByUid.entries.sortedByDescending { it.value }
+    for ((uid, bytes) in ordered) {
+      val packages = try { pm.getPackagesForUid(uid) } catch (_: Throwable) { null }
+      val pkg = packages?.firstOrNull() ?: continue
+      val row = JSONObject()
+      row.put("packageName", pkg)
+      row.put("label", resolveLabel(pm, pkg))
+      row.put("totalBytes", bytes)
       out.put(row)
     }
     return out

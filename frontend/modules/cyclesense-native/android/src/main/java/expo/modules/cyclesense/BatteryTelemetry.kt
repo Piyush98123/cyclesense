@@ -6,6 +6,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Build
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
  * Reads a rich, single-shot battery snapshot from the platform. All values are
@@ -50,6 +51,8 @@ internal object BatteryTelemetry {
       manager?.getLongProperty(BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER) ?: UNKNOWN_LONG
     } else UNKNOWN_LONG
     val capacity = manager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: UNKNOWN_INT
+    val cycleCount = readCycleCount(manager)
+    val designCapacityMah = readDesignCapacityMah(context)
 
     out.put("available", present)
     out.put("level", batteryLevel)
@@ -68,7 +71,45 @@ internal object BatteryTelemetry {
     out.put("chargeCounterMicroAh", chargeCounter)
     out.put("energyCounterNanoWh", energyCounter)
     out.put("isCharging", status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
+    out.put("cycleCount", cycleCount)
+    out.put("designCapacityMah", designCapacityMah)
     return out
+  }
+
+  /**
+   * BATTERY_PROPERTY_CYCLE_COUNT was only added in API 34 (UpsideDownCake).
+   * Returns UNKNOWN_INT on older OS versions or if the device doesn't report
+   * it - callers gate on this via the capability detector, same as every
+   * other OEM-dependent field.
+   */
+  private fun readCycleCount(manager: BatteryManager?): Int {
+    if (Build.VERSION.SDK_INT < 34) return UNKNOWN_INT
+    return try {
+      manager?.getIntProperty(6 /* BatteryManager.BATTERY_PROPERTY_CYCLE_COUNT */) ?: UNKNOWN_INT
+    } catch (_: Throwable) {
+      UNKNOWN_INT
+    }
+  }
+
+  /**
+   * Design (rated) battery capacity in mAh, read via the internal
+   * PowerProfile class through reflection. There is no public Android API
+   * for this - PowerProfile is the same technique long used by published
+   * battery-monitoring apps (e.g. AccuBattery). It is not guaranteed to
+   * exist or stay accessible on every OEM/OS combination, so this is
+   * wrapped defensively and the capability detector gates any feature built
+   * on top of it - a failure here degrades a feature, it never crashes.
+   */
+  private fun readDesignCapacityMah(context: Context): Int {
+    return try {
+      val profileClass = Class.forName("com.android.internal.os.PowerProfile")
+      val profile = profileClass.getConstructor(Context::class.java).newInstance(context)
+      val method = profileClass.getMethod("getBatteryCapacity")
+      val capacity = method.invoke(profile) as Double
+      if (capacity > 0) capacity.roundToInt() else UNKNOWN_INT
+    } catch (_: Throwable) {
+      UNKNOWN_INT
+    }
   }
 
   private fun statusLabel(status: Int): String = when (status) {

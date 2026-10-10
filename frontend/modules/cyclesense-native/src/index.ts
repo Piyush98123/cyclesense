@@ -2,9 +2,9 @@ import type { EventSubscription } from "expo-modules-core";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 
-import type { NativeBatteryTelemetry, NativeUsageEvent, NativeUsageStat, ScreenChange, ScreenEvent, TelemetryEvent } from "./types";
+import type { NativeBatteryTelemetry, NativeNetworkUsageStat, NativeUsageEvent, NativeUsageStat, ScreenChange, ScreenEvent, TelemetryEvent } from "./types";
 
-export type { NativeBatteryTelemetry, NativeUsageEvent, NativeUsageStat, ScreenChange, ScreenEvent, TelemetryEvent };
+export type { NativeBatteryTelemetry, NativeNetworkUsageStat, NativeUsageEvent, NativeUsageStat, ScreenChange, ScreenEvent, TelemetryEvent };
 
 type NativeSurface = {
   platform: string;
@@ -20,10 +20,12 @@ type NativeSurface = {
   openUsageStatsSettings(): Promise<boolean>;
   getUsageStats(dayCount: number): Promise<NativeUsageStat[]>;
   getUsageEvents(startMs: number, endMs: number): Promise<NativeUsageEvent[]>;
+  getNetworkUsage(startMs: number, endMs: number): Promise<NativeNetworkUsageStat[]>;
   startSessionForeground(mode: string, startLevel: number): Promise<boolean>;
   stopSessionForeground(): Promise<boolean>;
   isScreenOn(): Promise<boolean>;
   setSoundCuesEnabled(enabled: boolean): Promise<boolean>;
+   setDynamicIconState(charging: boolean): Promise<boolean>;
   updateWidget(levelPercent: number, ratePerHour: number, mode: string | null, chargerName: string | null): Promise<boolean>;
   addListener(event: string, listener: (event: TelemetryEvent | ScreenEvent) => void): EventSubscription;
   removeListener?(event: string, listener: (event: TelemetryEvent | ScreenEvent) => void): void;
@@ -77,6 +79,10 @@ export const CycleSenseNative = {
     return nativeModule ? nativeModule.getUsageEvents(startMs, endMs) : [];
   },
 
+  async getNetworkUsage(startMs: number, endMs: number): Promise<NativeNetworkUsageStat[]> {
+    return nativeModule ? nativeModule.getNetworkUsage(startMs, endMs) : [];
+  },
+
   async startSessionForeground(mode: "charge" | "discharge", startLevel: number): Promise<boolean> {
     return nativeModule ? nativeModule.startSessionForeground(mode, startLevel) : false;
   },
@@ -91,6 +97,10 @@ export const CycleSenseNative = {
 
   async setSoundCuesEnabled(enabled: boolean): Promise<boolean> {
     return nativeModule ? nativeModule.setSoundCuesEnabled(enabled) : false;
+  },
+
+  async setDynamicIconState(charging: boolean): Promise<boolean> {
+    return nativeModule ? nativeModule.setDynamicIconState(charging) : false;
   },
 
   async updateWidget(levelPercent: number, ratePerHour: number, mode: string | null, chargerName: string | null): Promise<boolean> {
@@ -140,6 +150,8 @@ function mockTelemetry(): NativeBatteryTelemetry {
     chargeCounterMicroAh: 0,
     energyCounterNanoWh: 0,
     isCharging: false,
+    cycleCount: -1,
+    designCapacityMah: -1,
   };
 }
 

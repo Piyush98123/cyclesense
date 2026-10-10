@@ -5,7 +5,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View, Pressable } from
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChartFrame, AppHeader, MetricTile, SectionTitle } from "@/src/components/cyclesense-ui";
-import { formatTimeToFull } from "@/src/data/analytics";
+import { estimateTimeToTarget, estimateWatts, formatTimeToFull } from "@/src/data/analytics";
 import { modeLabel } from "@/src/data/cyclesense";
 import { useCycleSense } from "@/src/hooks/useCycleSense";
 import { makeStyles, useTheme } from "@/src/theme";
@@ -14,7 +14,7 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
-  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes } = useCycleSense();
+  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings, samples, batteryHealth } = useCycleSense();
   useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
 
   useEffect(() => {
@@ -29,23 +29,59 @@ export default function Dashboard() {
     ? `${openSession.mode === "charge" ? "Charge" : "Discharge"} session running · started at ${openSession.startLevel}%`
     : "Plug in the charger to start a session automatically";
 
-  const powerDraw = status.currentNowMicroA != null ? `${(status.currentNowMicroA / 1000).toFixed(0)} mA` : "—";
+  const powerDrawWatts = estimateWatts(status.currentNowMicroA ?? null, status.voltageMv ?? null);
+  const powerDraw = status.currentNowMicroA != null ? `${(status.currentNowMicroA / 1000).toFixed(0)} mA${powerDrawWatts !== null ? ` · ${powerDrawWatts} W` : ""}` : "—";
   const powerDrawHint = status.currentNowMicroA != null ? (status.currentNowMicroA >= 0 ? "Charging into battery" : "Drawing from battery") : "Requires native bridge";
   const temperature = status.temperatureCelsius != null ? `${status.temperatureCelsius.toFixed(1)}°C` : "—";
   const temperatureHint = status.temperatureCelsius != null ? "Cell temperature" : "Requires native bridge";
-  const health = status.healthLabel && status.healthLabel !== "unknown" ? status.healthLabel.replace(/_/g, " ") : "—";
-  const healthHint = status.healthLabel ? "Reported by system" : "After first cycle";
+  // Real capacity-vs-design-capacity estimate (see src/data/health.ts) rather
+  // than just relabeling the system's coarse good/overheat/dead flag. Falls
+  // back to that system label only when there isn't yet enough discharge
+  // history to produce an estimate.
+  const health = batteryHealth.healthPercent !== null
+    ? `${batteryHealth.healthPercent}%`
+    : status.healthLabel && status.healthLabel !== "unknown"
+      ? status.healthLabel.replace(/_/g, " ")
+      : "—";
+  const healthHint = batteryHealth.healthPercent !== null
+    ? `Estimated · ${batteryHealth.confidence} confidence`
+    : status.healthLabel
+      ? "Reported by system"
+      : "After first cycle";
   const fourthLabel = isCharging ? "Time to full" : status.voltageMv && status.voltageMv > 0 ? "Voltage" : "Since unplugged";
   const fourthValue = isCharging
     ? formatTimeToFull(timeToFullMinutes)
     : status.voltageMv && status.voltageMv > 0
       ? `${(status.voltageMv / 1000).toFixed(2)} V`
       : (openSession ? "Open" : "—");
+  // When charging and the user's own alert threshold is still ahead, surface
+  // "time to my alert" as the hint instead of the generic one - same
+  // projection function as time-to-full, just a different target, so this
+  // can never silently disagree with the headline figure.
+  const currentLevelPercent = status.level === null ? null : Math.round(status.level * 100);
+  const timeToChargeAlert = isCharging && currentLevelPercent !== null && currentLevelPercent < settings.chargeAlert
+    ? estimateTimeToTarget(samples, currentLevelPercent, settings.chargeAlert)
+    : null;
   const fourthHint = isCharging
-    ? (timeToFullMinutes === null ? "Warming up" : "From raw samples")
+    ? (timeToFullMinutes === null
+        ? "Warming up"
+        : timeToChargeAlert !== null
+          ? `~${formatTimeToFull(timeToChargeAlert)} to your ${settings.chargeAlert}% alert`
+          : "From raw samples")
     : status.voltageMv && status.voltageMv > 0
       ? "Terminal voltage"
       : "Session window";
+
+  // Real curve data for the "Live curve" card, sourced from the same rolling
+  // sample buffer the Insights screen already reads. Previously this card
+  // never received a data prop at all, so it always showed the placeholder
+  // "Awaiting first complete cycle" caption even with real samples on hand.
+  const curveSamples = [...samples]
+    .filter((s) => s.levelPercent >= 0)
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-30);
+  const curveData = curveSamples.map((s) => s.levelPercent);
+  const curveCaption = curveData.length >= 2 ? `Last ${curveData.length} samples` : "Awaiting first complete cycle";
 
   if (!ready) return <View style={styles.loading}><ActivityIndicator color={colors.brandPrimary} size="large" /><Text style={styles.loadingText}>Binding device telemetry</Text></View>;
 
@@ -62,21 +98,33 @@ export default function Dashboard() {
         <MaterialCommunityIcons name="close" size={18} color={colors.muted} />
       </Pressable>
     ) : null}
-    <View style={styles.statusCard}>
-      <View style={styles.statusTop}><View><Text style={styles.cardKicker}>LIVE STATUS</Text><Text style={styles.statusLabel}>{modeLabel(status.mode)}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{bridgeLabel}</Text></View></View>
-      <View style={styles.percentRow}><Text style={styles.percent}>{percent}</Text><Text style={styles.percentSign}>%</Text><View style={styles.batteryGlyph}><MaterialCommunityIcons name={status.mode === "charging" ? "battery-charging" : "battery-medium"} size={66} color={colors.brandPrimary} /></View></View>
-      <Text style={styles.statusNote}>{nativeBridgeActive ? "Native BatteryManager bridge is streaming telemetry." : status.available ? "Reading the device power state directly." : "Battery metrics will appear when the native battery bridge is available."}</Text>
-      <View testID="dashboard-auto-pill" style={styles.autoPill}><MaterialCommunityIcons name={openSession ? "record-circle-outline" : "power-plug-outline"} size={16} color={openSession ? colors.success : colors.muted} /><Text style={styles.autoPillText}>{autoStatus}</Text></View>
-    </View>
-    <SectionTitle title="Quick telemetry" action={nativeBridgeActive ? "Native fields" : "Fallback"} />
-    <View style={styles.metricGrid}>
-      <MetricTile icon="flash-outline" label="Power draw" value={powerDraw} hint={powerDrawHint} tone="accent" />
-      <MetricTile icon="thermometer-low" label="Temperature" value={temperature} hint={temperatureHint} />
-      <MetricTile icon="heart-pulse" label="Battery health" value={health} hint={healthHint} tone="success" />
-      <MetricTile icon="clock-outline" label={fourthLabel} value={fourthValue} hint={fourthHint} tone={isCharging ? "success" : "neutral"} />
-    </View>
-    <SectionTitle title="Live curve" action="Raw samples" />
-    <ChartFrame label="Charge / discharge curve" caption="Awaiting first complete cycle" />
+    {settings.dashboardOrder.map((cardId) => {
+      if (cardId === "status") return (
+        <View key="status" style={styles.statusCard}>
+          <View style={styles.statusTop}><View><Text style={styles.cardKicker}>LIVE STATUS</Text><Text style={styles.statusLabel}>{modeLabel(status.mode)}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{bridgeLabel}</Text></View></View>
+          <View style={styles.percentRow}><Text style={styles.percent}>{percent}</Text><Text style={styles.percentSign}>%</Text><View style={styles.batteryGlyph}><MaterialCommunityIcons name={status.mode === "charging" ? "battery-charging" : "battery-medium"} size={66} color={colors.brandPrimary} /></View></View>
+          <Text style={styles.statusNote}>{nativeBridgeActive ? "Native BatteryManager bridge is streaming telemetry." : status.available ? "Reading the device power state directly." : "Battery metrics will appear when the native battery bridge is available."}</Text>
+          <View testID="dashboard-auto-pill" style={styles.autoPill}><MaterialCommunityIcons name={openSession ? "record-circle-outline" : "power-plug-outline"} size={16} color={openSession ? colors.success : colors.muted} /><Text style={styles.autoPillText}>{autoStatus}</Text></View>
+        </View>
+      );
+      if (cardId === "telemetry") return (
+        <View key="telemetry">
+          <SectionTitle title="Quick telemetry" action={nativeBridgeActive ? "Native fields" : "Fallback"} />
+          <View style={styles.metricGrid}>
+            <MetricTile icon="flash-outline" label="Power draw" value={powerDraw} hint={powerDrawHint} tone="accent" />
+            <MetricTile icon="thermometer-low" label="Temperature" value={temperature} hint={temperatureHint} />
+            <MetricTile icon="heart-pulse" label="Battery health" value={health} hint={healthHint} tone="success" />
+            <MetricTile icon="clock-outline" label={fourthLabel} value={fourthValue} hint={fourthHint} tone={isCharging ? "success" : "neutral"} />
+          </View>
+        </View>
+      );
+      return (
+        <View key="curve">
+          <SectionTitle title="Live curve" action="Raw samples" />
+          <ChartFrame label="Charge / discharge curve" caption={curveCaption} data={curveData.length >= 2 ? curveData : undefined} />
+        </View>
+      );
+    })}
     <View style={styles.notice}><MaterialCommunityIcons name="shield-check-outline" size={20} color={colors.success} /><View style={styles.noticeCopy}><Text style={styles.noticeTitle}>Private by default</Text><Text style={styles.noticeBody}>Your battery history stays on this device. No account or cloud sync is required.</Text></View></View>
   </ScrollView></View>;
 }
