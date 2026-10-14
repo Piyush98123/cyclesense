@@ -148,6 +148,7 @@ function mockTelemetry(): NativeBatteryTelemetry {
     currentNowMicroA: 0,
     currentAverageMicroA: 0,
     chargeCounterMicroAh: 0,
+    chargeTimeRemainingMs: -1,
     energyCounterNanoWh: 0,
     isCharging: false,
     cycleCount: -1,

@@ -4,6 +4,7 @@ import {
   computeMAhDelta,
   describeDrainDeviation,
   estimateChargeTimeToTarget,
+  estimateTimeToFullFromBattery,
   estimateTimeToFull,
   estimateTimeToTarget,
   estimateWatts,
@@ -113,6 +114,84 @@ describe("estimateTimeToFull / estimateTimeToTarget - thin wrappers", () => {
 
   it("estimateTimeToTarget returns 0 once the target is already passed", () => {
     expect(estimateTimeToTarget(samples, 92, 90)).toBe(0);
+  });
+});
+
+describe("estimateTimeToFullFromBattery", () => {
+  const baseInputs = {
+    currentLevelPercent: 60,
+    designCapacityMah: 5000,
+    chargeCounterMicroAh: 3_000_000,
+    currentAverageMicroA: 1_500_000,
+    currentNowMicroA: 1_700_000,
+    androidEstimateMs: -1,
+  };
+
+  it("prefers Android's estimate when available", () => {
+    expect(estimateTimeToFullFromBattery({ ...baseInputs, androidEstimateMs: 70 * 60_000 })).toEqual({
+      minutes: 70,
+      source: "android",
+    });
+  });
+
+  it("estimates remaining charge from the charge counter and net charging current", () => {
+    expect(estimateTimeToFullFromBattery(baseInputs)).toEqual({
+      minutes: 140,
+      source: "battery-current",
+    });
+  });
+
+  it("uses design capacity and percentage when the charge counter is unavailable", () => {
+    expect(estimateTimeToFullFromBattery({
+      ...baseInputs,
+      chargeCounterMicroAh: null,
+    })).toEqual({ minutes: 140, source: "battery-current" });
+  });
+
+  it("infers total capacity from the charge counter and percentage when design capacity is unavailable", () => {
+    expect(estimateTimeToFullFromBattery({
+      ...baseInputs,
+      designCapacityMah: null,
+    })).toEqual({ minutes: 140, source: "battery-current" });
+  });
+
+  it("falls back to instantaneous positive current when average current is unavailable", () => {
+    expect(estimateTimeToFullFromBattery({
+      ...baseInputs,
+      currentAverageMicroA: null,
+      currentNowMicroA: 2_000_000,
+    })).toEqual({ minutes: 105, source: "battery-current" });
+  });
+
+  it("does not use a discharging current or unavailable capacity", () => {
+    expect(estimateTimeToFullFromBattery({
+      ...baseInputs,
+      currentAverageMicroA: -1_500_000,
+      currentNowMicroA: -1_700_000,
+    })).toBeNull();
+    expect(estimateTimeToFullFromBattery({
+      ...baseInputs,
+      designCapacityMah: null,
+      chargeCounterMicroAh: null,
+    })).toBeNull();
+  });
+
+  it("rejects Android estimates that are unavailable or implausibly long", () => {
+    expect(estimateTimeToFullFromBattery({ ...baseInputs, androidEstimateMs: -1 })).toEqual({
+      minutes: 140,
+      source: "battery-current",
+    });
+    expect(estimateTimeToFullFromBattery({ ...baseInputs, androidEstimateMs: 8 * 24 * 60 * 60_000 })).toEqual({
+      minutes: 140,
+      source: "battery-current",
+    });
+  });
+
+  it("returns zero at full charge", () => {
+    expect(estimateTimeToFullFromBattery({ ...baseInputs, currentLevelPercent: 100 })).toEqual({
+      minutes: 0,
+      source: "full",
+    });
   });
 });
 

@@ -26,7 +26,14 @@ import {
   SETTINGS_STORAGE_KEY,
 } from "@/src/data/cyclesense";
 import { detectCapabilities, NO_CAPABILITIES } from "@/src/data/capabilities";
-import { baselineDeviation, computeBaseline, computeMAhDelta, estimateTimeToFull, isRealCurrentReading } from "@/src/data/analytics";
+import {
+  baselineDeviation,
+  computeBaseline,
+  computeMAhDelta,
+  estimateTimeToFullFromBattery,
+  estimateTimeToFullFromSamples,
+  isRealCurrentReading,
+} from "@/src/data/analytics";
 import { computeBatteryHealth } from "@/src/data/health";
 import {
   ChargerFingerprint,
@@ -88,6 +95,7 @@ function mapNativeStatus(telemetry: NativeBatteryTelemetry): BatteryStatus {
     currentNowMicroA: isRealCurrentReading(telemetry.currentNowMicroA) ? telemetry.currentNowMicroA : null,
     currentAverageMicroA: isRealCurrentReading(telemetry.currentAverageMicroA) ? telemetry.currentAverageMicroA : null,
     chargeCounterMicroAh: telemetry.chargeCounterMicroAh > 0 ? telemetry.chargeCounterMicroAh : null,
+    chargeTimeRemainingMs: telemetry.chargeTimeRemainingMs >= 0 ? telemetry.chargeTimeRemainingMs : null,
     technology: telemetry.technology ?? null,
     healthLabel: telemetry.healthLabel ?? null,
     pluggedLabel: telemetry.pluggedLabel ?? null,
@@ -660,13 +668,31 @@ export function useCycleSense() {
     () => computeBatteryHealth(sessions, status.designCapacityMah),
     [sessions, status.designCapacityMah],
   );
-  const timeToFullMinutes = useMemo(() => {
-    const isCharging = status.mode === "charging";
+  const timeToFullEstimate = useMemo(() => {
+    const isCharging = status.mode === "charging" || status.mode === "full";
     if (!isCharging) return null;
     const levelPercent = status.level === null ? -1 : Math.round(status.level * 100);
     if (levelPercent < 0) return null;
-    return estimateTimeToFull(samples, levelPercent);
-  }, [samples, status.mode, status.level]);
+    if (status.mode === "full") return { minutes: 0, source: "full" as const };
+    return estimateTimeToFullFromBattery({
+      currentLevelPercent: levelPercent,
+      designCapacityMah: status.designCapacityMah,
+      chargeCounterMicroAh: status.chargeCounterMicroAh,
+      currentAverageMicroA: status.currentAverageMicroA,
+      currentNowMicroA: status.currentNowMicroA,
+      androidEstimateMs: status.chargeTimeRemainingMs,
+    }) ?? estimateTimeToFullFromSamples(samples, levelPercent);
+  }, [
+    samples,
+    status.mode,
+    status.level,
+    status.designCapacityMah,
+    status.chargeCounterMicroAh,
+    status.currentAverageMicroA,
+    status.currentNowMicroA,
+    status.chargeTimeRemainingMs,
+  ]);
+  const timeToFullMinutes = timeToFullEstimate?.minutes ?? null;
 
   const updateSettings = useCallback(async (patch: Partial<CycleSettings>) => {
     const next = { ...settings, ...patch };
@@ -722,6 +748,7 @@ export function useCycleSense() {
     baseline,
     batteryHealth,
     timeToFullMinutes,
+    timeToFullSource: timeToFullEstimate?.source ?? null,
     ready,
     openSession,
     updateSessionDiary,

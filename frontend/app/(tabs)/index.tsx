@@ -14,7 +14,7 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
-  const { status, ready, openSession, refresh, reloadSettings, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings, samples, batteryHealth } = useCycleSense();
+  const { status, ready, openSession, refresh, reloadSettings, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, timeToFullSource, settings, samples, batteryHealth } = useCycleSense();
   useFocusEffect(useCallback(() => { refresh(); reloadSettings(); }, [refresh, reloadSettings]));
 
   useEffect(() => {
@@ -24,7 +24,7 @@ export default function Dashboard() {
   }, [chargerGreeting, dismissChargerGreeting]);
   const percent = status.level === null ? "--" : `${Math.round(status.level * 100)}`;
   const bridgeLabel = nativeBridgeActive ? "NATIVE" : status.available ? "LIVE" : "CAPABILITY CHECK";
-  const isCharging = status.mode === "charging";
+  const isCharging = status.mode === "charging" || status.mode === "full";
   const autoStatus = openSession
     ? `${openSession.mode === "charge" ? "Charge" : "Discharge"} session running · started at ${openSession.startLevel}%`
     : "Plug in the charger to start a session automatically";
@@ -65,18 +65,26 @@ export default function Dashboard() {
   // projection function as time-to-full, just a different target, so this
   // can never silently disagree with the headline figure.
   const currentLevelPercent = status.level === null ? null : Math.round(status.level * 100);
-  const timeToChargeAlert = isCharging && currentLevelPercent !== null && currentLevelPercent < settings.chargeAlert
+  const timeToChargeAlert = status.mode === "charging" && currentLevelPercent !== null && currentLevelPercent < settings.chargeAlert
     ? estimateTimeToTarget(samples, currentLevelPercent, settings.chargeAlert)
     : null;
-  const fourthHint = isCharging
-    ? (timeToFullMinutes === null
+  const fourthHint = status.mode === "full"
+    ? "Fully charged"
+    : isCharging
+      ? (timeToFullMinutes === null
         ? "Warming up"
         : timeToChargeAlert !== null
           ? `~${formatTimeToFull(timeToChargeAlert)} to your ${settings.chargeAlert}% alert`
-          : "From raw samples")
-    : status.voltageMv && status.voltageMv > 0
-      ? "Terminal voltage"
-      : "Session window";
+          : timeToFullSource === "android"
+            ? "Android estimate"
+            : timeToFullSource === "battery-current"
+              ? "Estimate from battery current"
+              : timeToFullSource === "full"
+                ? "Fully charged"
+              : "From raw samples")
+      : status.voltageMv && status.voltageMv > 0
+        ? "Terminal voltage"
+        : "Session window";
 
   // Real curve data for the "Live curve" card, sourced from the same rolling
   // sample buffer the Insights screen already reads. Previously this card

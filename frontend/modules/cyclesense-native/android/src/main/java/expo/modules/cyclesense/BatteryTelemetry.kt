@@ -51,6 +51,18 @@ internal object BatteryTelemetry {
       manager?.getLongProperty(BatteryManager.BATTERY_PROPERTY_ENERGY_COUNTER) ?: UNKNOWN_LONG
     } else UNKNOWN_LONG
     val capacity = manager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: UNKNOWN_INT
+    val chargeTimeRemainingMs = if (
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+      (status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
+    ) {
+      try {
+        manager?.computeChargeTimeRemaining() ?: -1L
+      } catch (_: RuntimeException) {
+        -1L
+      }
+    } else {
+      -1L
+    }
     val cycleCount = readCycleCount(manager)
     val designCapacityMah = readDesignCapacityMah(context)
 
@@ -69,6 +81,7 @@ internal object BatteryTelemetry {
     out.put("currentNowMicroA", currentNow)
     out.put("currentAverageMicroA", currentAverage)
     out.put("chargeCounterMicroAh", chargeCounter)
+    out.put("chargeTimeRemainingMs", chargeTimeRemainingMs)
     out.put("energyCounterNanoWh", energyCounter)
     out.put("isCharging", status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
     out.put("cycleCount", cycleCount)

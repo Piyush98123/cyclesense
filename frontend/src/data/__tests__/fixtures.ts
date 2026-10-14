@@ -83,6 +83,7 @@ export function mkSample(timestamp: number, levelPercent: number): NativeBattery
     currentNowMicroA: 1000000,
     currentAverageMicroA: 1000000,
     chargeCounterMicroAh: 2000000,
+    chargeTimeRemainingMs: -1,
     energyCounterNanoWh: 0,
     isCharging: true,
     cycleCount: -1,

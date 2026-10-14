@@ -12,6 +12,7 @@ export type BatteryStatus = {
   currentNowMicroA?: number | null;
   currentAverageMicroA?: number | null;
   chargeCounterMicroAh?: number | null;
+  chargeTimeRemainingMs?: number | null;
   technology?: string | null;
   healthLabel?: string | null;
   pluggedLabel?: string | null;

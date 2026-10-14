@@ -15,6 +15,7 @@ export type NativeBatteryTelemetry = {
   currentNowMicroA: number;
   currentAverageMicroA: number;
   chargeCounterMicroAh: number;
+  chargeTimeRemainingMs: number;
   energyCounterNanoWh: number;
   isCharging: boolean;
   cycleCount: number; // -1 when unavailable (needs API 34+ and device support)

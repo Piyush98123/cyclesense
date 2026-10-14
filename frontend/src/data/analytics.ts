@@ -84,6 +84,10 @@ const TAPER_RATE_FACTOR = 0.4;
 // existing MIN_PERCENT_DROP_FOR_ESTIMATE guard the battery-health estimate
 // already uses for the same reason).
 const MIN_PERCENT_DELTA_FOR_RATE = 2;
+const MIN_CAPACITY_MAH = 500;
+const MAX_CAPACITY_MAH = 30_000;
+const MIN_CHARGING_CURRENT_MA = 50;
+const MAX_ANDROID_CHARGE_TIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type ChargeProjection = {
   minutes: number;
@@ -91,6 +95,95 @@ export type ChargeProjection = {
    *  estimate is a heuristic blend rather than a plain rate extrapolation. */
   crossesTaper: boolean;
 };
+
+export type TimeToFullEstimate = {
+  minutes: number;
+  source: "android" | "battery-current" | "samples" | "full";
+};
+
+export type ChargeTimeInputs = {
+  currentLevelPercent: number;
+  designCapacityMah: number | null | undefined;
+  chargeCounterMicroAh: number | null | undefined;
+  currentAverageMicroA: number | null | undefined;
+  currentNowMicroA: number | null | undefined;
+  androidEstimateMs: number | null | undefined;
+};
+
+/**
+ * Estimate remaining charge time from Android's OS estimate first, then
+ * battery-side charge/current telemetry. Current must be positive (net
+ * current entering the battery); charger input power is deliberately not used.
+ */
+export function estimateTimeToFullFromBattery(inputs: ChargeTimeInputs): TimeToFullEstimate | null {
+  const {
+    currentLevelPercent,
+    designCapacityMah,
+    chargeCounterMicroAh,
+    currentAverageMicroA,
+    currentNowMicroA,
+    androidEstimateMs,
+  } = inputs;
+  if (!Number.isFinite(currentLevelPercent) || currentLevelPercent < 0 || currentLevelPercent > 100) return null;
+  if (currentLevelPercent >= 100) return { minutes: 0, source: "full" };
+
+  if (
+    androidEstimateMs != null &&
+    Number.isFinite(androidEstimateMs) &&
+    androidEstimateMs > 0 &&
+    androidEstimateMs <= MAX_ANDROID_CHARGE_TIME_MS
+  ) {
+    return { minutes: Math.max(1, Math.round(androidEstimateMs / 60_000)), source: "android" };
+  }
+
+  const chargeCounterMah = chargeCounterMicroAh != null && chargeCounterMicroAh > 0
+    ? chargeCounterMicroAh / 1000
+    : null;
+  const inferredCapacityMah = chargeCounterMah !== null && currentLevelPercent >= 10
+    ? chargeCounterMah / (currentLevelPercent / 100)
+    : null;
+  const capacityMah = inferredCapacityMah !== null &&
+      inferredCapacityMah >= MIN_CAPACITY_MAH &&
+      inferredCapacityMah <= MAX_CAPACITY_MAH &&
+      (!designCapacityMah || designCapacityMah <= 0 ||
+        (inferredCapacityMah >= designCapacityMah * 0.5 && inferredCapacityMah <= designCapacityMah * 1.5))
+    ? inferredCapacityMah
+    : designCapacityMah != null &&
+        Number.isFinite(designCapacityMah) &&
+        designCapacityMah >= MIN_CAPACITY_MAH &&
+        designCapacityMah <= MAX_CAPACITY_MAH
+      ? designCapacityMah
+      : null;
+  const currentMa = [currentAverageMicroA, currentNowMicroA]
+    .find((current) => current != null && Number.isFinite(current) &&
+      current >= MIN_CHARGING_CURRENT_MA * 1000 && current <= 20_000_000);
+  if (capacityMah === null || currentMa == null) return null;
+
+  const remainingMah = chargeCounterMah !== null && chargeCounterMah >= 0 && chargeCounterMah < capacityMah * 1.05
+    ? Math.max(0, capacityMah - chargeCounterMah)
+    : capacityMah * (100 - currentLevelPercent) / 100;
+  if (!Number.isFinite(remainingMah) || remainingMah <= 0) return null;
+
+  const currentMaValue = currentMa / 1000;
+  let minutes = remainingMah / currentMaValue * 60;
+  const effectiveLevelPercent = 100 - remainingMah / capacityMah * 100;
+  if (effectiveLevelPercent < TAPER_START_PERCENT) {
+    const fastChargeMah = capacityMah * (TAPER_START_PERCENT - effectiveLevelPercent) / 100;
+    const taperedChargeMah = capacityMah * (100 - TAPER_START_PERCENT) / 100;
+    minutes = fastChargeMah / currentMaValue * 60 +
+      taperedChargeMah / (currentMaValue * TAPER_RATE_FACTOR) * 60;
+  }
+  if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 7 * 24 * 60) return null;
+  return { minutes: Math.round(minutes), source: "battery-current" };
+}
+
+export function estimateTimeToFullFromSamples(
+  samples: NativeBatteryTelemetry[] | null | undefined,
+  currentLevelPercent: number,
+): TimeToFullEstimate | null {
+  const minutes = estimateTimeToFull(samples, currentLevelPercent);
+  return minutes === null ? null : { minutes, source: "samples" };
+}
 
 function recentChargeRatePerMinute(
   samples: NativeBatteryTelemetry[] | null | undefined,
