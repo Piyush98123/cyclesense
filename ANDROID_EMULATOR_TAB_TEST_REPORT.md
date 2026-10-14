@@ -1,0 +1,195 @@
+# CycleSense Android Emulator Test Report
+
+**Test date:** 2026-10-14  
+**Target:** Android emulator (`sdk_gphone64_x86_64`)  
+**App package:** `com.emergent.mobileappbuilder.y0lu2t`  
+**Test style:** Manual end-to-end UI testing using Android emulator controls, screenshots, accessibility hierarchy, controlled `dumpsys battery` states, local AsyncStorage inspection, and Android logs  
+**Overall status:** Today’s four tracked issues were fixed and rechecked on a bundled Android release build: session persistence, current direction, settings refresh on tab return, and hiding the curve until data is available. Charger recognition displayed a known-charger greeting on the emulator. A numeric time-to-full estimate and sample-backed curve remain unverified because only one usable sample was exposed; notification sound is also unverified.
+
+## 1. Purpose and scope
+
+This report records what was observed while checking CycleSense in the running Android emulator. It distinguishes:
+
+- **Verified:** The screen or interaction was exercised and its visible result checked.
+- **Partial:** The screen or interaction was seen, but its full behavior or persistence was not verified.
+- **Not tested:** No conclusion about whether the feature works.
+- **Issue observed:** The emulator displayed contradictory or unexpected behavior that needs investigation.
+
+The earlier pass checked that all four navigation tabs open, inspected their visible content, exercised the charging-alert stepper, and reviewed recent app error logs. This pass focused on Today: it compared displayed battery values with the emulator battery service, tapped Refresh, simulated charging and unplugging, crossed both configured alert thresholds, inspected persisted sessions/settings, tested card-order refresh on tab return, and verified the tracked fixes. The emulator battery and dashboard order were restored; test-generated session rows remain in app storage because this release app cannot safely restore private AsyncStorage on this emulator.
+
+## 2. Summary of current results
+
+| Tab | Result | What was confirmed |
+|---|---|---|
+| Today | Exercised; tracked issues fixed | Live values and Refresh were checked against the emulator. Session records persisted through charge transitions and force-stop/relaunch. Direction text followed charging/discharging mode. Reordered dashboard cards appeared on Today immediately after returning from Settings. Curve is hidden until sufficient samples exist. A known-charger greeting was displayed; numeric time-to-full was not available with one sample. |
+| Timeline | Partial; session persistence verified | Timeline initially showed zero sessions before the persistence fix. After the fix, it displayed the saved test sessions after transitions and relaunch. Session detail, comparison, and charger workflows remain untested. |
+| Insights | Partial | 24H, 30D, and Digest selectors each rendered their respective empty-data view. No populated analytics were verified. |
+| Settings | Partial | Earlier pass rendered Settings and changed the charge alert from 90% to 95%, then restored it to 90%. This pass also changed card order, verified it after relaunch, and restored the original order. Other controls were not behaviorally verified. |
+
+No fatal app crash was observed during the Today walkthrough. This is not proof that all functionality is crash-free.
+
+## 3. Issues and observations
+
+### CS-EMU-01 — Today shows an active session, while session history stays empty
+
+- **Severity:** High (data consistency)
+- **Status:** Fixed and verified on the Android emulator
+- **Observation:** Today showed an active discharge/charge session, but `cyclesense:sessions` in Android AsyncStorage remained `[]` after the controlled charge transition and app relaunch. The initial Timeline walkthrough also showed `0` sessions and “No cycles recorded yet”.
+- **Expected:** An open session should appear in session history as an in-progress session, or the UI should consistently explain why it is omitted.
+- **Code-level cause (high confidence):** In `startSession()` and `endSession()`, a local `capped` array starts empty, then is assigned only inside React's `setSessions(current => ...)` updater. The code immediately passes that local variable to `persistSessions(capped)` after scheduling the state update. React is not required to execute the updater before that next statement, so the persisted value can remain `[]` even while the UI has an open session. This matches the observed `cyclesense:sessions: []`. Timeline also has a separate hook instance and only reloads from storage on focus, so it cannot show an in-memory session that was never persisted.
+- **Code-level cause:** `startSession()` and `endSession()` formerly persisted a local array assigned as a side effect inside React’s state-updater callback. React may defer that callback, leaving the persisted value empty. Timeline uses a separate hook instance and reloads sessions from storage on focus.
+- **Fix:** Session mutations now compute an explicit next array from a current sessions ref, update the ref and UI state, and persist that same array.
+- **Emulator verification:** Timeline showed an open session; after a charge transition it showed the closed discharge plus open charge record. After unplugging and force-stopping/relaunching, the saved records remained and the current open session was reconciled. No crash occurred in the tested flow.
+
+### CS-EMU-02 — Discharging status conflicts with “Charging into battery” current hint
+
+- **Severity:** Medium (telemetry presentation; device-dependent)
+- **Status:** Fixed and verified in charging and discharging emulator states
+- **Observation:** With Android reporting AC power off, status `4` (discharging), and level 91%, Today displayed `Discharging` but still showed `900 mA · 4.5 W` and “Charging into battery”. The same positive current was displayed while charging, so the emulator value did not distinguish the two directions.
+- **Expected:** The current direction and charge state should agree, or the app should avoid assigning a direction when the device’s current sign convention is unknown.
+- **Code-level cause:** The UI chose direction from the sign of `currentNowMicroA`; the emulator reports the same positive 900 mA while charging and discharging.
+- **Fix:** The hint now uses battery mode (`charging`/`full` or `discharging`) and reports unavailable direction for other modes. Current is displayed as a magnitude, separate from direction.
+- **Emulator verification:** At 80% unplugged/discharging the card showed “Drawing from battery”; at 80% charging it showed “Charging into battery”. Both displayed 900 mA and 4.5 W. Emulator current remains synthetic, so physical-device telemetry is not claimed as verified.
+
+### CS-EMU-03 — Android log reports notification sound `default` is missing
+
+- **Severity:** Low (notification sound; impact not fully verified)
+- **Status:** Warning reproduced; threshold notification text verified, sound not verified
+- **Observation:** React Native logged: `expo-notifications: Custom sound 'default' not found in native app. Make sure the sound file ... is included in the expo-notifications config plugin sounds array in app config.`
+- **Area to investigate:** Notification channel and notification content configuration in `frontend/src/notifications.ts`.
+- **Test result/follow-up:** With notification permission already granted, crossing 89% to 90% while charging posted “Charging threshold reached” / “Battery reached 90% while charging.” Crossing 21% to 20% while discharging posted “Battery running low” / “Battery fell to 20%. Consider plugging in.” One low-battery notification record remained after the level fell to 19%, consistent with the alert not repeating immediately. A plug transition also posted its notification. Whether alerts played sound remains unverified; investigate whether `default` is being treated as a missing custom sound.
+- **Caution:** The warning alone does not establish that notifications fail. Notification behavior was not fully tested.
+
+### CS-EMU-04 — Today does not immediately reflect a changed dashboard order
+
+- **Severity:** Medium (cross-tab state refresh)
+- **Status:** Fixed and verified on tab return
+- **Observation:** Changed the order to status → Live curve → Quick telemetry in Settings and returned to Today. Today initially continued to show Quick telemetry before Live curve. After force-stopping and relaunching, it showed the saved order correctly.
+- **Expected:** Returning to Today after changing its card order should render the latest saved preference without requiring an app restart.
+- **Code-level cause:** Every tab calls `useCycleSense()` independently. Settings persists the new order, but Today’s mounted hook did not reload preferences when it regained focus.
+- **Fix:** Today reloads persisted settings on focus.
+- **Emulator verification:** Moved Quick telemetry above Live status in Settings, returned to Today without restarting, and confirmed Quick telemetry appeared first. Restored the original order afterward.
+
+### CS-EMU-05 — Live curve displays fallback bars while awaiting real samples
+
+- **Severity:** Low (misleading empty-data presentation)
+- **Status:** Fixed; curve is hidden until at least two valid samples are available
+- **Observation:** The curve caption said “Awaiting first complete cycle”, but the card still displayed a populated set of orange bars. No meaningful populated curve could be validated from those bars.
+- **Expected:** A no-data/insufficient-samples state should not look like a real measured curve.
+- **Code-level cause:** `ChartFrame` substituted a fixed illustrative array whenever its `data` prop was absent, making an empty chart look populated.
+- **Fix:** `ChartFrame` draws bars only from supplied data. Today now hides the entire Live curve section until at least two valid samples exist, then captions the chart with its sample count.
+- **Emulator verification:** With fewer than two usable samples, the Live curve section is hidden instead of showing an empty chart. Two-sample/populated rendering still requires a usable sample history to verify.
+
+## 4. Detailed tab-by-tab test record
+
+### 4.1 Today
+
+Screen: `frontend/app/(tabs)/index.tsx`
+
+| ID | Functionality / fields | Test procedure | Status | Observation / expected result |
+|---|---|---|---|---|
+| TOD-01 | Dashboard opens and renders | Open Today from the bottom navigation; inspect the screen and scroll through its cards | Verified | Dashboard, telemetry, curve, and “Private by default” card rendered and were scrollable; no crash observed. |
+| TOD-02 | Battery percentage and battery mode | Compare Today with `dumpsys battery`; set emulator to 80% charging and unplugged | Verified | Today showed 80% Charging and 80% Discharging matching `dumpsys battery`. Emulator restored to 100% unplugged at the end of verification. |
+| TOD-03 | Native/live capability indicator | Read the status badge | Verified | `NATIVE` was displayed and the native telemetry sentence appeared. |
+| TOD-04 | Automatic session status | Observe Today during charging and unplug transitions; inspect Timeline after relaunch | Verified; fix confirmed | Session pill changed with charge state. Timeline showed the open session, then the closed discharge and open charge records after transition; after force-stop/relaunch, saved sessions remained and the active session was reconciled (CS-EMU-01). |
+| TOD-05 | Current, watts, temperature, health, voltage | Read Quick telemetry in charging/discharging states; compare voltage/temperature with `dumpsys battery` | Verified; direction fix confirmed | Both 80% states displayed 900 mA / 4.5 W, 25.0°C, system health `good`, and 5.00 V; temperature/voltage matched `dumpsys battery`. Direction hint matched mode in both states (CS-EMU-02). Emulator current is synthetic. |
+| TOD-06 | Live curve | Scroll Today with fewer than two valid samples; then inspect after samples accumulate | Verified for hidden empty state | The entire Live curve section is hidden until at least two valid samples exist (CS-EMU-05). Populated sample-backed rendering was unavailable to test. |
+| TOD-07 | Refresh action | Tap Refresh from the header and compare the visible values | Verified | Refresh completed and the dashboard continued to show the values then reported by the emulator; no error or crash observed. |
+| TOD-08 | Charger recognition greeting | Reconnect the emulator's previously learned AC charger and inspect Today | Verified on emulator | On connecting AC at 80%, Today displayed “WELCOME BACK — Your Standard charger is back” and “Recognized this cable from its current signature.” This verifies the known-charger match/greeting path against the emulator's persisted synthetic AC fingerprint; it does not prove physical charger identification accuracy. |
+| TOD-09 | Time-to-full / time-to-alert estimate | Inspect while charging below the 90% alert; enable sampling and inspect captured sample count | Partial; numeric E2E estimate unavailable | At 80–82% Charging, Today showed `Time to full —` / `Warming up`. Insights exposed only 1 raw sample. A numeric projection requires at least two valid, time-ordered samples with at least a 2 percentage-point rise in the recent window; the app samples via opt-in WorkManager at a minimum 15-minute interval. Estimator unit tests passed, but the numeric UI estimate could not be verified from this session's data. Sampling was turned back off. |
+| TOD-10 | Notification threshold/cue behavior | Cross the configured charge threshold (89%→90%) and discharge threshold (21%→20%); inspect notification content and check at 19% | Verified for delivery; sound partial | Android posted “Charging threshold reached” / “Battery reached 90% while charging” and “Battery running low” / “Battery fell to 20%. Consider plugging in.” One low-battery notification remained after the level fell to 19%, with no second record observed. Plug/unplug notification text also appeared. Sound was not confirmed; missing-`default` warning CS-EMU-03 was logged. Full re-arming behavior was not tested. |
+| TOD-11 | Dashboard card order | Move Quick telemetry above Live status in Settings and return to Today without restarting | Verified; fix confirmed | Today immediately showed the changed order on tab return (CS-EMU-04). Restored the original card order after testing. |
+| TOD-12 | Return to top/bottom dashboard content | Scroll between the live-status card, curve, and privacy card | Verified | Scrolling exposed the lower cards and “Private by default” message without a visible layout crash. |
+
+### 4.2 Timeline
+
+Screen: `frontend/app/(tabs)/timeline.tsx`
+
+| ID | Functionality / fields | Test procedure | Status | Observation / expected result |
+|---|---|---|---|---|
+| TIM-01 | Timeline opens and renders | Open Timeline from the bottom navigation | Verified | Screen rendered without a visible crash. |
+| TIM-02 | Session and known-charger counts | Read the summary row before and after session transitions/relaunch | Verified for session persistence | Initially showed zero before CS-EMU-01 was fixed. After the fix, Timeline showed saved open and closed test sessions across transitions and app relaunch. Known-charger behavior remains unverified. |
+| TIM-03 | Empty-state behavior | Open Timeline before recording sessions | Verified for initial empty state | Timeline showed the no-session empty state before E2E session records were generated. |
+| TIM-04 | Session row values | Complete a session and inspect row title, mode, times, levels, duration, rate, and confidence | Not tested | No session row was available during the walkthrough. |
+| TIM-05 | Session detail modal | Tap a session and check details, notes, tags, sample curve, and usage fields | Not tested | Requires at least one completed session; optional fields may depend on native support and permission. |
+| TIM-06 | Compare two sessions | Select two session rows and inspect normalized curve overlay | Not tested | Requires at least two recorded sessions. |
+| TIM-07 | Charger recognition list | Complete charge sessions and inspect learned charger metadata | Not tested | Requires charger fingerprints with usable telemetry. |
+| TIM-08 | Rename/forget charger | Rename a known charger; verify it persists, then forget it | Not tested | Requires at least one known charger. |
+| TIM-09 | Diary note and tags | Add/edit session note and tags, leave and reopen the session | Not tested | Requires a session; persistence and UI behavior need verification. |
+
+### 4.3 Insights
+
+Screen: `frontend/app/(tabs)/analytics.tsx`
+
+| ID | Functionality / fields | Test procedure | Status | Observation / expected result |
+|---|---|---|---|---|
+| INS-01 | Insights opens and renders | Open Insights from bottom navigation | Verified | Screen rendered without a visible crash. |
+| INS-02 | 24H range selection | Select 24H | Partial | Range rendered its empty-data message and showed that samples were still awaited. Populated chart behavior was not checked. |
+| INS-03 | 30D range selection | Select 30D | Partial | Health trend view rendered with “Awaiting data” / “Needs a few full discharge cycles”. |
+| INS-04 | Digest range selection | Select Digest | Partial | Period digest view rendered with “Awaiting data” and average drain waiting for samples. |
+| INS-05 | Digest period options and calculations | Select each digest period and check trend, average drain, and charging-habit values | Not tested | No populated session data was available to validate calculations. |
+| INS-06 | Baseline and anomaly insight | Record sufficient completed discharge sessions and inspect comparison | Not tested | Requires historical data; thresholds and calculations were not validated in the UI. |
+| INS-07 | Screen-on metrics | Compare displayed totals and longest screen-on run against observed device use | Not tested | Requires supported native screen tracking and elapsed observation time. |
+| INS-08 | Weekly app ranking / weekday-weekend pattern | Grant Usage Access and inspect weekly usage insights | Not tested | Requires explicit Android Usage Access permission and sufficient usage history. |
+| INS-09 | Insights navigation links | Use any “View timeline” or related action and verify destination | Not tested | — |
+
+### 4.4 Settings
+
+Screen: `frontend/app/(tabs)/settings.tsx`
+
+| ID | Functionality / fields | Test procedure | Status | Observation / expected result |
+|---|---|---|---|---|
+| SET-01 | Settings opens and renders | Open Settings from bottom navigation | Verified | Screen and visible controls rendered. |
+| SET-02 | Charge alert stepper | Increase 90% to 95%, then decrease to restore 90% | Verified | Value updated to 95%; it was restored and verified at 90%. Persistence after a full app restart was not checked. |
+| SET-03 | Discharge alert stepper and bounds | Change threshold; test minimum/maximum boundaries | Not tested | Initial displayed value was 20%; limits and persistence were not checked. |
+| SET-04 | Sound cues switch | Toggle off/on; test actual plug/unplug cue behavior | Not tested | Initial switch appeared enabled. Notification log warning CS-EMU-03 should be considered during cue testing. |
+| SET-05 | Background sampling toggle | Enable sampling, wait for WorkManager run, inspect sample history; disable afterward | Not tested | UI showed the native Android description. Actual scheduled sampling was not verified. |
+| SET-06 | Dashboard card reorder | Move Quick telemetry above Live status, return to Today, then restore original order | Verified | Today immediately reflected the saved reorder on tab return without an app restart (CS-EMU-04); original order was restored. |
+| SET-07 | Device capability indicators | Compare each listed capability with values actually available on the emulator | Not tested | The screen was not scrolled through and checked field by field. |
+| SET-08 | CSV export | Tap export, inspect generated CSV and share sheet; cancel after verification | Not tested | Avoided because it may open an external share flow; CSV content was not inspected. |
+| SET-09 | Advanced section and Usage Access | Expand advanced settings, grant/revoke access, verify opt-in state and Insights behavior | Not tested | Requires explicit Android system permission flow. |
+| SET-10 | Preference persistence | Change a preference, force-stop/relaunch, and verify stored value | Not tested | The charge alert was restored to its original value; restart persistence remains unverified. |
+
+## 5. Cross-tab and platform test cases still needed
+
+These behaviors span more than one screen and are necessary to verify the main user journey:
+
+1. **Charge start:** With app running, connect power; confirm battery mode changes, a charge session starts, Today updates, and Timeline lists the open session.
+2. **Charge end:** Disconnect power; confirm the charge session closes and its end level, duration, and rate appear in Timeline.
+3. **Discharge start/end:** Repeat unplugged, then reconnect; verify automatic discharge session handling and closed-session analytics.
+4. **Process restart/reconciliation:** Force-stop or relaunch while charging/discharging; verify there are no duplicate or lost sessions and that Timeline matches Today.
+5. **Persistence:** Restart the app and verify session history, charger memory, settings, notes, and tags persist.
+6. **Alerts:** Grant notification permission and cross configured thresholds in both directions; verify notification content, repetition/re-arming, and sound settings.
+7. **Native-only capabilities:** Verify sample collection, WorkManager behavior, screen tracking, usage stats, and widget updates individually. Use a physical device where emulator telemetry or Android OEM behavior may differ.
+8. **Export:** Generate CSV from non-empty session history, inspect column headers/values and quoting, then verify the Android share sheet opens.
+9. **Responsive/accessibility review:** Check scrolling, touch targets, text scaling, content descriptions, and contrast on the emulator.
+
+## 6. Suggested execution order for the next test pass
+
+1. Re-run session persistence and mode-based direction scenarios on a physical Android device.
+2. Build a sufficiently long non-empty sample set to validate populated curves, numeric estimates, and health trends.
+3. Re-run Timeline details, comparison, charger memory, diary, and CSV export checks using completed sessions.
+4. Re-run Insights with real sessions and raw samples rather than only empty states.
+5. Verify notification sound, discharge-alert re-arming, and advanced Android permissions/features.
+6. Repeat critical scenarios after app restart and across Android versions/OEM devices where possible.
+
+## 7. Test limitations
+
+- Controlled emulator battery overrides exercised state/threshold transitions, but did not generate a complete natural charge/discharge cycle or validate session duration/rate calculations.
+- Empty-state screens are evidence that the screens render, not evidence that populated analytics are correct.
+- Emulator battery/current readings can be synthetic and may not reflect physical-device behavior.
+- Threshold and plug/unplug notification content was verified, but alert sound, discharge-alert re-arming, long-running background work, Usage Access results, and launcher widget updates were not fully verified.
+- No usable native sample trend was available, so populated curves, numeric charge estimates, and sample-derived health could not be checked.
+- Source-level test suites are separate from this manual emulator report; passing unit tests do not prove Android UI or native integration works.
+- The Android battery override was reset to 100%, unplugged, 5.00 V, and 25.0°C, and the original dashboard order was restored. The release app is non-debuggable and this emulator does not permit `adb root`, so private AsyncStorage could not be backed up/restored; the E2E-generated session records remain in app storage. No alert-threshold or sound-cue preference changes were made during this verification pass. The app was left on Today.
+
+## 8. Source areas referenced
+
+- Navigation: `frontend/app/(tabs)/_layout.tsx`
+- Today: `frontend/app/(tabs)/index.tsx`
+- Timeline: `frontend/app/(tabs)/timeline.tsx`
+- Insights: `frontend/app/(tabs)/analytics.tsx`
+- Settings: `frontend/app/(tabs)/settings.tsx`
+- Shared session, persistence, telemetry, and settings state: `frontend/src/hooks/useCycleSense.ts`
+- Android notification handling: `frontend/src/notifications.ts`
+- Shared domain types: `frontend/src/data/cyclesense.ts`

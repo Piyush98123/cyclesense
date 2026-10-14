@@ -14,8 +14,8 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
-  const { status, ready, openSession, refresh, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings, samples, batteryHealth } = useCycleSense();
-  useFocusEffect(useCallback(() => { refresh(); }, [refresh]));
+  const { status, ready, openSession, refresh, reloadSettings, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, settings, samples, batteryHealth } = useCycleSense();
+  useFocusEffect(useCallback(() => { refresh(); reloadSettings(); }, [refresh, reloadSettings]));
 
   useEffect(() => {
     if (!chargerGreeting) return;
@@ -30,8 +30,14 @@ export default function Dashboard() {
     : "Plug in the charger to start a session automatically";
 
   const powerDrawWatts = estimateWatts(status.currentNowMicroA ?? null, status.voltageMv ?? null);
-  const powerDraw = status.currentNowMicroA != null ? `${(status.currentNowMicroA / 1000).toFixed(0)} mA${powerDrawWatts !== null ? ` · ${powerDrawWatts} W` : ""}` : "—";
-  const powerDrawHint = status.currentNowMicroA != null ? (status.currentNowMicroA >= 0 ? "Charging into battery" : "Drawing from battery") : "Requires native bridge";
+  const powerDraw = status.currentNowMicroA != null ? `${(Math.abs(status.currentNowMicroA) / 1000).toFixed(0)} mA${powerDrawWatts !== null ? ` · ${powerDrawWatts} W` : ""}` : "—";
+  const powerDrawHint = status.currentNowMicroA == null
+    ? "Requires native bridge"
+    : status.mode === "charging" || status.mode === "full"
+      ? "Charging into battery"
+      : status.mode === "discharging"
+        ? "Drawing from battery"
+        : "Direction unavailable";
   const temperature = status.temperatureCelsius != null ? `${status.temperatureCelsius.toFixed(1)}°C` : "—";
   const temperatureHint = status.temperatureCelsius != null ? "Cell temperature" : "Requires native bridge";
   // Real capacity-vs-design-capacity estimate (see src/data/health.ts) rather
@@ -81,7 +87,8 @@ export default function Dashboard() {
     .sort((a, b) => a.timestamp - b.timestamp)
     .slice(-30);
   const curveData = curveSamples.map((s) => s.levelPercent);
-  const curveCaption = curveData.length >= 2 ? `Last ${curveData.length} samples` : "Awaiting first complete cycle";
+  const hasCurveData = curveData.length >= 2;
+  const curveCaption = `Last ${curveData.length} samples`;
 
   if (!ready) return <View style={styles.loading}><ActivityIndicator color={colors.brandPrimary} size="large" /><Text style={styles.loadingText}>Binding device telemetry</Text></View>;
 
@@ -98,7 +105,7 @@ export default function Dashboard() {
         <MaterialCommunityIcons name="close" size={18} color={colors.muted} />
       </Pressable>
     ) : null}
-    {settings.dashboardOrder.map((cardId) => {
+    {settings.dashboardOrder.filter((cardId) => cardId !== "curve" || hasCurveData).map((cardId) => {
       if (cardId === "status") return (
         <View key="status" style={styles.statusCard}>
           <View style={styles.statusTop}><View><Text style={styles.cardKicker}>LIVE STATUS</Text><Text style={styles.statusLabel}>{modeLabel(status.mode)}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{bridgeLabel}</Text></View></View>
@@ -121,7 +128,7 @@ export default function Dashboard() {
       return (
         <View key="curve">
           <SectionTitle title="Live curve" action="Raw samples" />
-          <ChartFrame label="Charge / discharge curve" caption={curveCaption} data={curveData.length >= 2 ? curveData : undefined} />
+          <ChartFrame label="Charge / discharge curve" caption={curveCaption} data={curveData} />
         </View>
       );
     })}

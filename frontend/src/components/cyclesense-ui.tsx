@@ -37,11 +37,14 @@ export function EmptyPanel({ icon, title, body, action, onAction }: { icon: keyo
 
 export function ChartFrame({ label, caption, data }: { label: string; caption: string; data?: number[] }) {
   const styles = useStyles();
-  const source = data && data.length > 0 ? data : [34, 47, 41, 58, 52, 66, 60, 78, 72];
-  const min = Math.min(...source);
-  const max = Math.max(...source);
-  const range = Math.max(1, max - min);
-  const bars = source.slice(-32).map((value) => Math.round(((value - min) / range) * 88) + 8);
+  const source = data?.slice(-32) ?? [];
+  let bars: number[] = [];
+  if (source.length > 0) {
+    const min = Math.min(...source);
+    const max = Math.max(...source);
+    const range = Math.max(1, max - min);
+    bars = source.map((value) => Math.round(((value - min) / range) * 88) + 8);
+  }
   return <View style={styles.chartFrame}><View style={styles.chartHeader}><Text style={styles.chartLabel}>{label}</Text><Text style={styles.chartCaption}>{caption}</Text></View><View style={styles.chartArea}>{[0, 1, 2, 3].map((row) => <View key={row} style={styles.chartGrid} />)}<View style={styles.chartBars}>{bars.map((height, index) => <View key={index} style={[styles.chartBar, { height }]} />)}</View></View></View>;
 }
 

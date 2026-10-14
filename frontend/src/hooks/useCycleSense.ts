@@ -107,6 +107,7 @@ export function useCycleSense() {
   const [capabilities, setCapabilities] = useState<Capabilities>(NO_CAPABILITIES);
   const [samples, setSamples] = useState<NativeBatteryTelemetry[]>([]);
   const [screenDaily, setScreenDaily] = useState<ScreenDaily>({ date: localDateKey(), totalOnMinutes: 0, longestOnMinutes: 0 });
+  const sessionsRef = useRef<Session[]>([]);
   const runningPeakCurrent = useRef<number>(0);
   const previousMode = useRef<BatteryMode | null>(null);
   const autoTransitionBusy = useRef(false);
@@ -124,9 +125,21 @@ export function useCycleSense() {
   const reloadSessions = useCallback(async () => {
     const storedSessions = await storage.getItem(SESSION_STORAGE_KEY, "[]");
     try {
-      setSessions(capSessions(normalizeSessions(JSON.parse(storedSessions || "[]") as Partial<Session>[])));
+      const loaded = capSessions(normalizeSessions(JSON.parse(storedSessions || "[]") as Partial<Session>[]));
+      sessionsRef.current = loaded;
+      setSessions(loaded);
     } catch {
+      sessionsRef.current = [];
       setSessions([]);
+    }
+  }, []);
+
+  const reloadSettings = useCallback(async () => {
+    const storedSettings = await storage.getItem(SETTINGS_STORAGE_KEY, JSON.stringify(defaultSettings));
+    try {
+      setSettings({ ...defaultSettings, ...(JSON.parse(storedSettings || "{}") as CycleSettings) });
+    } catch {
+      setSettings(defaultSettings);
     }
   }, []);
 
@@ -135,6 +148,14 @@ export function useCycleSense() {
     await storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(capped));
     return capped;
   }, []);
+
+  const commitSessions = useCallback(async (next: Session[]) => {
+    const capped = capSessions(next);
+    sessionsRef.current = capped;
+    setSessions(capped);
+    await persistSessions(capped);
+    return capped;
+  }, [persistSessions]);
 
   const refresh = useCallback(async () => {
     try {
@@ -230,12 +251,15 @@ export function useCycleSense() {
       if (active) {
         try {
           const storedSessions = await storage.getItem(SESSION_STORAGE_KEY, "[]");
-          setSessions(capSessions(normalizeSessions(JSON.parse(storedSessions || "[]") as Partial<Session>[])));
+          const loaded = capSessions(normalizeSessions(JSON.parse(storedSessions || "[]") as Partial<Session>[]));
+          sessionsRef.current = loaded;
+          setSessions(loaded);
           setSettings({ ...defaultSettings, ...(JSON.parse(storedSettings || "{}") as CycleSettings) });
           setChargers(JSON.parse(storedChargersRaw || "[]") as Charger[]);
           const parsedDaily = JSON.parse(storedScreenDaily || "{}") as ScreenDaily;
           setScreenDaily(parsedDaily.date === localDateKey() ? parsedDaily : { date: localDateKey(), totalOnMinutes: 0, longestOnMinutes: 0 });
         } catch {
+          sessionsRef.current = [];
           setSessions([]);
           setSettings(defaultSettings);
           setChargers([]);
@@ -339,12 +363,7 @@ export function useCycleSense() {
     screenOnCurrentSessionMs.current = 0;
     currentLongestOnMs.current = 0;
     if (screenOnSinceMs.current !== null) screenOnSinceMs.current = Date.now();
-    let capped: Session[] = [];
-    setSessions((current) => {
-      capped = capSessions([next, ...current]);
-      return capped;
-    });
-    await persistSessions(capped);
+    await commitSessions([next, ...sessionsRef.current]);
     const persisted: PersistedPowerState = {
       state: powerStateFromMode(status.mode),
       atIso: next.startAt,
@@ -361,7 +380,7 @@ export function useCycleSense() {
       // session tracking (see setDynamicIcon's own try/catch on the native side).
       await CycleSenseNative.setDynamicIconState(isCharge);
     }
-  }, [chargers, persistSessions, status]);
+  }, [chargers, commitSessions, status]);
 
   const endSession = useCallback(async () => {
     if (!openSession) return;
@@ -448,12 +467,8 @@ export function useCycleSense() {
       .filter((s) => s.timestamp >= sessionStartMs && s.levelPercent >= 0)
       .map((s) => ({ t: s.timestamp, level: s.levelPercent }))
       .sort((a, b) => a.t - b.t);
-    let capped: Session[] = [];
-    setSessions((current) => {
-      capped = capSessions(current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation, curve: curve.length > 0 ? curve : null } : session));
-      return capped;
-    });
-    await persistSessions(capped);
+    const nextSessions = sessionsRef.current.map((session) => session.id === openSession.id ? { ...session, endAt: new Date().toISOString(), endLevel, durationMinutes, rate, peakCurrentMicroA: peakCurrent, chargerLabel: label, chargerCategory: category, chargerId, chargerName, screenOnMinutes, screenOffMinutes, endChargeCounterMicroAh, mAhDelta, topApps, baselineDeviation: deviation, curve: curve.length > 0 ? curve : null } : session);
+    await commitSessions(nextSessions);
     const persistedState: PersistedPowerState = {
       state: powerStateFromMode(status.mode),
       atIso: new Date().toISOString(),
@@ -463,7 +478,7 @@ export function useCycleSense() {
     if (NATIVE_ACTIVE) {
       await CycleSenseNative.stopSessionForeground();
     }
-  }, [chargers, flushScreenOnInterval, openSession, persistChargers, persistSessions, samples, sessions, status]);
+  }, [chargers, commitSessions, flushScreenOnInterval, openSession, persistChargers, samples, sessions, status]);
 
   // Auto-track plug/unplug: plug in → open a charge session; unplug → close
   // whatever session is running. The user can still tap the Dashboard button
@@ -618,12 +633,9 @@ export function useCycleSense() {
   }, [ready, status.level, status.mode, settings.chargeAlert, settings.dischargeAlert, settings.soundCues]);
 
   const updateSessionDiary = useCallback(async (id: string, patch: { note?: string | null; tags?: string[] | null }) => {
-    setSessions((current) => {
-      const next = current.map((s) => s.id === id ? { ...s, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.tags !== undefined ? { tags: patch.tags } : {}) } : s);
-      persistSessions(next);
-      return next;
-    });
-  }, [persistSessions]);
+    const next = sessionsRef.current.map((session) => session.id === id ? { ...session, ...(patch.note !== undefined ? { note: patch.note } : {}), ...(patch.tags !== undefined ? { tags: patch.tags } : {}) } : session);
+    await commitSessions(next);
+  }, [commitSessions]);
 
   const renameCharger = useCallback(async (id: string, name: string) => {
     const trimmed = name.trim();
@@ -631,12 +643,9 @@ export function useCycleSense() {
     const next = chargers.map((c) => c.id === id ? { ...c, name: trimmed } : c);
     setChargers(next);
     await persistChargers(next);
-    setSessions((current) => {
-      const patched = current.map((s) => s.chargerId === id ? { ...s, chargerName: trimmed } : s);
-      persistSessions(patched);
-      return patched;
-    });
-  }, [chargers, persistChargers, persistSessions]);
+    const patched = sessionsRef.current.map((session) => session.chargerId === id ? { ...session, chargerName: trimmed } : session);
+    await commitSessions(patched);
+  }, [chargers, commitSessions, persistChargers]);
 
   const forgetCharger = useCallback(async (id: string) => {
     const next = chargers.filter((c) => c.id !== id);
@@ -717,6 +726,7 @@ export function useCycleSense() {
     openSession,
     updateSessionDiary,
     updateSettings,
+    reloadSettings,
     exportCsv,
     refresh,
     reloadSessions,
