@@ -49,10 +49,19 @@ describe("computeDigest - period windows", () => {
     const sessions = [
       mkSession({ mode: "discharge", endAt: null, mAhDelta: 500, startAt: daysAgoIso(0.1) }),
       mkSession({ mode: "discharge", mAhDelta: 300, startAt: daysAgoIso(0.2) }),
+      mkSession({ mode: "charge", mAhDelta: 2000, startAt: daysAgoIso(0.3) }),
     ];
     const digest = computeDigest(sessions, "daily");
-    expect(digest.totalSessions).toBe(1);
+    expect(digest.totalSessions).toBe(2);
     expect(digest.totalMAh).toBe(300);
+  });
+
+  it("averages completed charge-session durations regardless of start and end level", () => {
+    const sessions = [
+      mkSession({ mode: "charge", startLevel: 63, endLevel: 89, durationMinutes: 90, startAt: daysAgoIso(0.2) }),
+      mkSession({ mode: "charge", endAt: null, durationMinutes: 180, startAt: daysAgoIso(0.1) }),
+    ];
+    expect(computeDigest(sessions, "daily").averageChargeMinutes).toBe(90);
   });
 });
 

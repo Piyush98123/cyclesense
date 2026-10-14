@@ -27,7 +27,9 @@ function computeDigestForWindow(sessions: Session[], startMs: number, endMs: num
   const closed = sessions.filter((s) => s.endAt !== null && new Date(s.startAt).getTime() >= startMs && new Date(s.startAt).getTime() < endMs);
   const dischargeRates = closed.filter((s) => s.mode === "discharge" && s.rate !== null).map((s) => s.rate as number);
   const chargeDurations = closed.filter((s) => s.mode === "charge" && s.durationMinutes !== null).map((s) => s.durationMinutes as number);
-  const mAhTotal = closed.reduce((acc, s) => acc + (s.mAhDelta ?? 0), 0);
+  const mAhTotal = closed
+    .filter((s) => s.mode === "discharge")
+    .reduce((acc, s) => acc + (s.mAhDelta ?? 0), 0);
   const perDay = new Map<string, number>();
   for (const s of closed) {
     if (s.mode !== "discharge" || s.rate === null) continue;

@@ -64,9 +64,8 @@ export function computeBatteryHealth(sessions: Session[], designCapacityMah: num
 }
 
 /**
- * Health % across chronological buckets of discharge sessions (oldest to
- * newest) - this is what feeds the Analytics "30D" chart, which previously
- * always rendered the empty placeholder regardless of how much data existed.
+ * Health % across chronological buckets of qualifying discharge sessions
+ * from the last 30 days - this is what feeds the Analytics "30D" chart.
  * Each bucket is its own mini-estimate, so the result is a real (if
  * noisy, small-sample) trend rather than one static number repeated.
  */
@@ -77,8 +76,18 @@ export function computeHealthTrend(
 ): number[] {
   if (!designCapacityMah || designCapacityMah <= 0) return [];
 
+  const now = Date.now();
+  const cutoff = now - 30 * 24 * 60 * 60 * 1000;
   const usable = sessions
-    .filter((s) => s.mode === "discharge" && s.endAt !== null && s.mAhDelta !== null && s.endLevel !== null)
+    .filter((s) => {
+      const startMs = new Date(s.startAt).getTime();
+      return s.mode === "discharge"
+        && s.endAt !== null
+        && s.mAhDelta !== null
+        && s.endLevel !== null
+        && startMs >= cutoff
+        && startMs <= now;
+    })
     .map((s) => ({
       percentDrop: s.startLevel - (s.endLevel as number),
       mAhDelta: s.mAhDelta as number,

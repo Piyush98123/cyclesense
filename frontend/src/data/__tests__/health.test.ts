@@ -95,6 +95,15 @@ describe("computeHealthTrend", () => {
     expect(computeHealthTrend([mkSession({ mode: "discharge", startLevel: 90, endLevel: 40, mAhDelta: 1350 })], 3000)).toEqual([]);
   });
 
+  it("excludes discharge sessions older than the 30-day trend window", () => {
+    const sessions = [
+      mkSession({ mode: "discharge", startLevel: 90, endLevel: 40, mAhDelta: 1455, startAt: daysAgoIso(60) }),
+      mkSession({ mode: "discharge", startLevel: 90, endLevel: 40, mAhDelta: 1455, startAt: daysAgoIso(55) }),
+      mkSession({ mode: "discharge", startLevel: 90, endLevel: 40, mAhDelta: 1350, startAt: daysAgoIso(5) }),
+    ];
+    expect(computeHealthTrend(sessions, 3000)).toEqual([]);
+  });
+
   it("returns an empty array with no design capacity", () => {
     const sessions = [
       mkSession({ mode: "discharge", startLevel: 90, endLevel: 40, mAhDelta: 1350, startAt: daysAgoIso(1) }),

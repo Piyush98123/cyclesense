@@ -16,7 +16,7 @@ import { makeStyles, useTheme } from "@/src/theme";
 
 const ranges = ["24H", "30D", "Digest"] as const;
 const digestPeriods: { id: DigestPeriod; label: string }[] = [
-  { id: "daily", label: "Today" },
+  { id: "daily", label: "24H" },
   { id: "5day", label: "5-Day" },
 ];
 
@@ -54,7 +54,7 @@ export default function Analytics() {
   const longestStreak = screenDailyLive.longestOnMinutes > 0 ? formatMinutes(screenDailyLive.longestOnMinutes) : "—";
   const longestHint = capabilities.screenTracking ? "Longest run today" : "Native build only";
   const baselineDisplay = baseline !== null ? `${baseline.toFixed(1)}%` : "—";
-  const baselineHint = baseline !== null ? "7-day discharge avg" : "Needs 2+ discharge cycles";
+  const baselineHint = baseline !== null ? "7-day discharge avg" : "Needs 2+ discharges in 7 days";
 
   const lastDischarge = sessions.find((s) => s.mode === "discharge" && s.endAt !== null);
   const showAnomaly = lastDischarge?.baselineDeviation != null && isAnomaly(lastDischarge.baselineDeviation);
@@ -123,21 +123,30 @@ export default function Analytics() {
       <View style={styles.confidenceBanner}><MaterialCommunityIcons name="information-outline" size={19} color={colors.info} /><View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Confidence-aware analytics</Text><Text style={styles.bannerBody}>CycleSense separates raw measurements from estimates and always shows the confidence level.</Text></View></View>
     )}
     {!hasCompleteCycle && !curve && healthTrend.length === 0 ? <EmptyPanel icon="chart-timeline-variant" title="Accumulating power data" body="Complete your first charge or discharge session to unlock curves, health trends, and baseline comparisons." action="View timeline" onAction={() => router.push("/(tabs)/timeline")} /> : null}
-    <SectionTitle title={range === "Digest" ? "Period digest" : range === "30D" ? "Health trend" : "Cycle curve"} action={range === "30D" ? (healthTrend.length > 0 ? `${healthTrend.length} pts` : "Awaiting data") : curve ? `${filteredSamples.length} pts` : hasCompleteCycle ? "Session summary" : "Awaiting data"} />
-    <ChartFrame label={range === "Digest" ? "Average drain rate" : range === "30D" ? "Battery health estimate" : "Charge / discharge"} caption={curveCaption} data={chartData} />
+    <SectionTitle
+      title={range === "Digest" ? "Period digest" : range === "30D" ? "Health trend" : "Cycle curve"}
+      action={range === "Digest"
+        ? `${digest.totalSessions} sessions`
+        : range === "30D"
+          ? (healthTrend.length > 0 ? `${healthTrend.length} pts` : "Awaiting data")
+          : curve
+            ? `${filteredSamples.length} pts`
+            : "Awaiting samples"}
+    />
+    {range !== "Digest" ? <ChartFrame label={range === "30D" ? "Battery health estimate" : "Charge / discharge"} caption={curveCaption} data={chartData} /> : null}
     <View style={styles.insightGrid}>
       <Insight icon="speedometer" label="Average drain" value={averageDrain} detail="% / hour" />
       <Insight icon="monitor-cellphone" label="Screen-on time" value={screenTotal} detail={screenTotalHint} />
       <Insight icon="timer-sand" label="Longest streak" value={longestStreak} detail={longestHint} />
       <Insight icon="trending-up" label="Baseline" value={baselineDisplay} detail={baselineHint} />
-      <Insight icon="heart-pulse" label="Battery health" value={batteryHealth.healthPercent !== null ? `${batteryHealth.healthPercent}%` : "—"} detail={batteryHealth.healthPercent !== null ? `Estimated · ${batteryHealth.confidence}` : status.designCapacityMah ? "Needs more history" : "Unavailable on device"} />
+      <Insight icon="heart-pulse" label="Battery health" value={batteryHealth.healthPercent !== null ? `${batteryHealth.healthPercent}%` : "—"} detail={batteryHealth.healthPercent !== null ? `From ${batteryHealth.sampleCount} discharge session${batteryHealth.sampleCount === 1 ? "" : "s"} · ${batteryHealth.confidence} confidence` : status.designCapacityMah ? "Needs more history" : "Unavailable on device"} />
     </View>
-    <SectionTitle title={digestPeriod === "daily" ? "Today's digest" : "5-day digest"} action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} />
+    <SectionTitle title={digestPeriod === "daily" ? "24-hour digest" : "5-day digest"} action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} />
     <View style={styles.periodBar}>{digestPeriods.map((item) => <Pressable testID={`digest-period-${item.id}`} key={item.id} onPress={() => setDigestPeriod(item.id)} accessibilityRole="button" accessibilityState={{ selected: digestPeriod === item.id }} style={[styles.periodButton, digestPeriod === item.id && styles.periodSelected]}><Text style={[styles.periodText, digestPeriod === item.id && styles.periodTextSelected]}>{item.label}</Text></Pressable>)}</View>
     <View testID="insights-digest" style={styles.digestGrid}>
       <Insight icon="battery-charging-100" label="Avg drain" value={digest.averageDrain !== null ? `${digest.averageDrain}%` : "—"} detail={trendDetail} />
-      <Insight icon="lightning-bolt-outline" label="Avg charge" value={digest.averageChargeMinutes !== null ? formatMinutes(digest.averageChargeMinutes) : "—"} detail="0 → full" />
-      <Insight icon="atom-variant" label="Energy in" value={digest.totalMAh !== null ? `${digest.totalMAh.toFixed(0)} mAh` : "—"} detail="Sum drawn" />
+      <Insight icon="lightning-bolt-outline" label="Avg charge time" value={digest.averageChargeMinutes !== null ? formatMinutes(digest.averageChargeMinutes) : "—"} detail="Completed sessions · any level" />
+      <Insight icon="atom-variant" label="Charge drawn" value={digest.totalMAh !== null ? `${digest.totalMAh.toFixed(0)} mAh` : "—"} detail="Across discharge sessions" />
       <Insight icon="calendar-clock" label="Toughest day" value={digest.worstDay ? digest.worstDay.slice(5) : "—"} detail="Highest drain" />
     </View>
     {habitSummary ? (

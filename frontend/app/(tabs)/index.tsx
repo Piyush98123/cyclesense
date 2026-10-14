@@ -50,7 +50,7 @@ export default function Dashboard() {
       ? status.healthLabel.replace(/_/g, " ")
       : "—";
   const healthHint = batteryHealth.healthPercent !== null
-    ? `Estimated · ${batteryHealth.confidence} confidence`
+    ? `From ${batteryHealth.sampleCount} discharge session${batteryHealth.sampleCount === 1 ? "" : "s"} · ${batteryHealth.confidence} confidence`
     : status.healthLabel
       ? "Reported by system"
       : "After first cycle";
@@ -72,7 +72,7 @@ export default function Dashboard() {
     ? "Fully charged"
     : isCharging
       ? (timeToFullMinutes === null
-        ? "Warming up"
+        ? "No reliable estimate yet"
         : timeToChargeAlert !== null
           ? `~${formatTimeToFull(timeToChargeAlert)} to your ${settings.chargeAlert}% alert`
           : timeToFullSource === "android"
