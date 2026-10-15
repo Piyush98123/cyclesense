@@ -49,6 +49,19 @@ import { storage } from "@/src/utils/storage";
 
 const NATIVE_ACTIVE = Platform.OS === "android" && CycleSenseNative.isNative;
 const capSessions = (list: Session[]): Session[] => (list.length > SESSION_HISTORY_LIMIT ? list.slice(0, SESSION_HISTORY_LIMIT) : list);
+const LIVE_CHARGE_SAMPLE_LIMIT = 12;
+
+function updateLiveChargeSamples(
+  samples: NativeBatteryTelemetry[],
+  telemetry: NativeBatteryTelemetry,
+): NativeBatteryTelemetry[] {
+  if (telemetry.statusLabel !== "charging" || telemetry.levelPercent < 0 || !Number.isFinite(telemetry.timestamp)) return [];
+  const byTimestamp = new Map(samples.map((sample) => [sample.timestamp, sample]));
+  byTimestamp.set(telemetry.timestamp, telemetry);
+  return [...byTimestamp.values()]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-LIVE_CHARGE_SAMPLE_LIMIT);
+}
 
 // Backfill new optional fields on sessions loaded from an older schema so the
 // UI never has to guard against undefined vs null on P2-era columns.
@@ -114,6 +127,7 @@ export function useCycleSense() {
   const [ready, setReady] = useState(false);
   const [capabilities, setCapabilities] = useState<Capabilities>(NO_CAPABILITIES);
   const [samples, setSamples] = useState<NativeBatteryTelemetry[]>([]);
+  const [liveChargeSamples, setLiveChargeSamples] = useState<NativeBatteryTelemetry[]>([]);
   const [screenDaily, setScreenDaily] = useState<ScreenDaily>({ date: localDateKey(), totalOnMinutes: 0, longestOnMinutes: 0 });
   const sessionsRef = useRef<Session[]>([]);
   const runningPeakCurrent = useRef<number>(0);
@@ -281,6 +295,7 @@ export function useCycleSense() {
           if (active) {
             setStatus(mapNativeStatus(telemetry));
             setCapabilities(detectCapabilities(telemetry, true));
+            setLiveChargeSamples((current) => updateLiveChargeSamples(current, telemetry));
           }
           const initial = await CycleSenseNative.getSamples(200);
           if (active) setSamples(initial);
@@ -304,6 +319,7 @@ export function useCycleSense() {
     if (NATIVE_ACTIVE) {
       telemetrySubscription = CycleSenseNative.addTelemetryListener((telemetry) => {
         setStatus(mapNativeStatus(telemetry));
+        setLiveChargeSamples((current) => updateLiveChargeSamples(current, telemetry));
       });
       screenSubscription = CycleSenseNative.addScreenChangeListener(handleScreenChange);
     } else if (Platform.OS !== "web" && typeof Battery.addBatteryLevelListener === "function" && typeof Battery.addBatteryStateListener === "function") {
@@ -681,8 +697,12 @@ export function useCycleSense() {
       currentAverageMicroA: status.currentAverageMicroA,
       currentNowMicroA: status.currentNowMicroA,
       androidEstimateMs: status.chargeTimeRemainingMs,
-    }) ?? estimateTimeToFullFromSamples(samples, levelPercent);
+    }) ?? estimateTimeToFullFromSamples(
+      liveChargeSamples.length > 0 ? liveChargeSamples : samples,
+      levelPercent,
+    );
   }, [
+    liveChargeSamples,
     samples,
     status.mode,
     status.level,
@@ -742,6 +762,7 @@ export function useCycleSense() {
     forgetCharger,
     capabilities,
     samples,
+    chargeEstimateSamples: liveChargeSamples.length > 0 ? liveChargeSamples : samples,
     refreshSamples,
     screenDaily,
     screenDailyLive,

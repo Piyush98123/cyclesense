@@ -5,6 +5,7 @@ import {
   describeDrainDeviation,
   estimateChargeTimeToTarget,
   estimateTimeToFullFromBattery,
+  estimateTimeToFullFromSamples,
   estimateTimeToFull,
   estimateTimeToTarget,
   estimateWatts,
@@ -114,6 +115,20 @@ describe("estimateTimeToFull / estimateTimeToTarget - thin wrappers", () => {
 
   it("estimateTimeToTarget returns 0 once the target is already passed", () => {
     expect(estimateTimeToTarget(samples, 92, 90)).toBe(0);
+  });
+});
+
+describe("estimateTimeToFullFromSamples", () => {
+  it("estimates from live charging level changes without background samples", () => {
+    const liveSamples = [mkSample(0, 65), mkSample(25 * 60_000, 90)];
+    expect(estimateTimeToFullFromSamples(liveSamples, 90)).toEqual({
+      minutes: 10,
+      source: "samples",
+    });
+  });
+
+  it("waits for enough live charge history before estimating", () => {
+    expect(estimateTimeToFullFromSamples([mkSample(0, 65)], 65)).toBeNull();
   });
 });
 

@@ -14,7 +14,7 @@ export default function Dashboard() {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useStyles();
-  const { status, ready, openSession, refresh, reloadSettings, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, timeToFullSource, settings, samples, batteryHealth } = useCycleSense();
+  const { status, ready, openSession, refresh, reloadSettings, nativeBridgeActive, chargerGreeting, dismissChargerGreeting, timeToFullMinutes, timeToFullSource, settings, samples, chargeEstimateSamples, batteryHealth } = useCycleSense();
   useFocusEffect(useCallback(() => { refresh(); reloadSettings(); }, [refresh, reloadSettings]));
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function Dashboard() {
   // can never silently disagree with the headline figure.
   const currentLevelPercent = status.level === null ? null : Math.round(status.level * 100);
   const timeToChargeAlert = status.mode === "charging" && currentLevelPercent !== null && currentLevelPercent < settings.chargeAlert
-    ? estimateTimeToTarget(samples, currentLevelPercent, settings.chargeAlert)
+    ? estimateTimeToTarget(chargeEstimateSamples, currentLevelPercent, settings.chargeAlert)
     : null;
   const fourthHint = status.mode === "full"
     ? "Fully charged"
