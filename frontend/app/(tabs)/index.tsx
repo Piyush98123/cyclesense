@@ -28,6 +28,10 @@ export default function Dashboard() {
   const autoStatus = openSession
     ? `${openSession.mode === "charge" ? "Charge" : "Discharge"} session running · started at ${openSession.startLevel}%`
     : "Plug in the charger to start a session automatically";
+  const deviceName = [status.manufacturer, status.modelName].filter(Boolean).join(" ") || "Unavailable";
+  const batteryCapacity = status.designCapacityMah && status.designCapacityMah > 0
+    ? `${status.designCapacityMah.toLocaleString()} mAh`
+    : "Unavailable";
 
   const powerDrawWatts = estimateWatts(status.currentNowMicroA ?? null, status.voltageMv ?? null);
   const powerDraw = status.currentNowMicroA != null ? `${(Math.abs(status.currentNowMicroA) / 1000).toFixed(0)} mA${powerDrawWatts !== null ? ` · ${powerDrawWatts} W` : ""}` : "—";
@@ -95,8 +99,7 @@ export default function Dashboard() {
     .sort((a, b) => a.timestamp - b.timestamp)
     .slice(-30);
   const curveData = curveSamples.map((s) => s.levelPercent);
-  const hasCurveData = curveData.length >= 2;
-  const curveCaption = `Last ${curveData.length} samples`;
+  const curveCaption = curveData.length >= 2 ? `Last ${curveData.length} samples` : "Waiting for more samples";
 
   if (!ready) return <View style={styles.loading}><ActivityIndicator color={colors.brandPrimary} size="large" /><Text style={styles.loadingText}>Binding device telemetry</Text></View>;
 
@@ -113,18 +116,36 @@ export default function Dashboard() {
         <MaterialCommunityIcons name="close" size={18} color={colors.muted} />
       </Pressable>
     ) : null}
-    {settings.dashboardOrder.filter((cardId) => cardId !== "curve" || hasCurveData).map((cardId) => {
+    {settings.dashboardOrder.map((cardId) => {
       if (cardId === "status") return (
         <View key="status" style={styles.statusCard}>
           <View style={styles.statusTop}><View><Text style={styles.cardKicker}>LIVE STATUS</Text><Text style={styles.statusLabel}>{modeLabel(status.mode)}</Text></View><View style={styles.liveBadge}><View style={styles.liveDot} /><Text style={styles.liveText}>{bridgeLabel}</Text></View></View>
           <View style={styles.percentRow}><Text style={styles.percent}>{percent}</Text><Text style={styles.percentSign}>%</Text><View style={styles.batteryGlyph}><MaterialCommunityIcons name={status.mode === "charging" ? "battery-charging" : "battery-medium"} size={66} color={colors.brandPrimary} /></View></View>
           <Text style={styles.statusNote}>{nativeBridgeActive ? "Native BatteryManager bridge is streaming telemetry." : status.available ? "Reading the device power state directly." : "Battery metrics will appear when the native battery bridge is available."}</Text>
+          <View testID="dashboard-device-details" style={styles.deviceInfoRow}>
+            <View style={styles.deviceInfoItem}>
+              <Text style={styles.deviceInfoLabel}>DEVICE</Text>
+              <Text style={styles.deviceInfoValue}>{deviceName}</Text>
+            </View>
+            <View style={styles.deviceInfoItem}>
+              <Text style={styles.deviceInfoLabel}>RATED BATTERY CAPACITY</Text>
+              <Text style={styles.deviceInfoValue}>{batteryCapacity}</Text>
+            </View>
+          </View>
           <View testID="dashboard-auto-pill" style={styles.autoPill}><MaterialCommunityIcons name={openSession ? "record-circle-outline" : "power-plug-outline"} size={16} color={openSession ? colors.success : colors.muted} /><Text style={styles.autoPillText}>{autoStatus}</Text></View>
         </View>
       );
       if (cardId === "telemetry") return (
         <View key="telemetry">
-          <SectionTitle title="Quick telemetry" action={nativeBridgeActive ? "Native fields" : "Fallback"} />
+          <SectionTitle
+            title="Quick telemetry"
+            action={nativeBridgeActive ? "Native fields" : "Fallback"}
+            info={{
+              title: "About quick telemetry",
+              message: "Power, temperature, and voltage depend on what your device reports. Battery health is an estimate from qualifying completed discharge sessions, so it can remain unavailable or unchanged during charging. Time to full needs a valid Android estimate, usable battery-current data, or enough recent charging-level readings; keep Today open while charging if it is still warming up.",
+              testID: "today-telemetry-info",
+            }}
+          />
           <View style={styles.metricGrid}>
             <MetricTile icon="flash-outline" label="Power draw" value={powerDraw} hint={powerDrawHint} tone="accent" />
             <MetricTile icon="thermometer-low" label="Temperature" value={temperature} hint={temperatureHint} />
@@ -135,7 +156,15 @@ export default function Dashboard() {
       );
       return (
         <View key="curve">
-          <SectionTitle title="Live curve" action="Raw samples" />
+          <SectionTitle
+            title="Live curve"
+            action="Raw samples"
+            info={{
+              title: "About the live curve",
+              message: "This chart uses native battery samples collected on this device. It appears after at least two usable samples are available. Background sampling can add samples while the app is not open; the live time-to-full estimate does not require background sampling.",
+              testID: "today-live-curve-info",
+            }}
+          />
           <ChartFrame label="Charge / discharge curve" caption={curveCaption} data={curveData} />
         </View>
       );
@@ -161,6 +190,10 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   percentSign: { color: colors.brandPrimary, fontSize: 24, fontWeight: "500", marginTop: 30, marginLeft: 5 },
   batteryGlyph: { marginLeft: "auto", opacity: 0.9 },
   statusNote: { color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 },
+  deviceInfoRow: { flexDirection: "row", gap: 14, borderTopWidth: 1, borderTopColor: colors.divider, paddingTop: 12 },
+  deviceInfoItem: { flex: 1, gap: 4 },
+  deviceInfoLabel: { color: colors.muted, fontSize: 9, fontWeight: "600", letterSpacing: 0.8 },
+  deviceInfoValue: { color: colors.onSurface, fontSize: 12, fontWeight: "500" },
   sessionButton: { minHeight: 48, borderRadius: 12, backgroundColor: colors.brandPrimary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 2 },
   sessionButtonText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: "600" },
   autoPill: { flexDirection: "row", alignItems: "center", gap: 8, alignSelf: "flex-start", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.surfaceTertiary, borderWidth: 1, borderColor: colors.border },

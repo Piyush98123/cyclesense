@@ -86,6 +86,8 @@ internal object BatteryTelemetry {
     out.put("isCharging", status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL)
     out.put("cycleCount", cycleCount)
     out.put("designCapacityMah", designCapacityMah)
+    out.put("manufacturer", Build.MANUFACTURER)
+    out.put("modelName", Build.MODEL)
     return out
   }
 

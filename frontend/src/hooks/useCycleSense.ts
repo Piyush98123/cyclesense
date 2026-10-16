@@ -115,6 +115,8 @@ function mapNativeStatus(telemetry: NativeBatteryTelemetry): BatteryStatus {
     nativeBridge: true,
     cycleCount: telemetry.cycleCount >= 0 ? telemetry.cycleCount : null,
     designCapacityMah: telemetry.designCapacityMah > 0 ? telemetry.designCapacityMah : null,
+    manufacturer: telemetry.manufacturer || null,
+    modelName: telemetry.modelName || null,
   };
 }
 
@@ -398,11 +400,19 @@ export function useCycleSense() {
       setChargerGreeting({ name: guessed.name, kind: "known", category: guessed.category });
     }
     if (NATIVE_ACTIVE) {
-      await CycleSenseNative.startSessionForeground(next.mode, next.startLevel);
+      try {
+        await CycleSenseNative.startSessionForeground(next.mode, next.startLevel);
+      } catch (error) {
+        console.error("[CycleSense] Could not start foreground session tracking.", error);
+      }
       // Home-screen launcher icon reflects real state: green while charging,
       // amber while draining. Cosmetic only - failures here never block
       // session tracking (see setDynamicIcon's own try/catch on the native side).
-      await CycleSenseNative.setDynamicIconState(isCharge);
+      try {
+        await CycleSenseNative.setDynamicIconState(isCharge);
+      } catch (error) {
+        console.error("[CycleSense] Could not update the launcher icon.", error);
+      }
     }
   }, [chargers, commitSessions, status]);
 
@@ -534,6 +544,8 @@ export function useCycleSense() {
           const ok = await ensureNotifications(true);
           if (ok) await sendBatteryAlert(isCharging ? "plug" : "unplug", percent, true);
         }
+      } catch (error) {
+        console.error("[CycleSense] Could not process a battery power transition.", error);
       } finally {
         autoTransitionBusy.current = false;
       }
@@ -587,8 +599,8 @@ export function useCycleSense() {
         if (NATIVE_ACTIVE) {
           await CycleSenseNative.setDynamicIconState(observed === "CHARGING");
         }
-      } catch {
-        // reconciliation is best-effort
+      } catch (error) {
+        console.error("[CycleSense] Could not reconcile the active battery session.", error);
       }
     })();
   }, [ready, status.mode, status.level, sessions, endSession, startSession]);

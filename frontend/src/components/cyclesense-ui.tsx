@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { makeStyles } from "@/src/theme";
 
@@ -19,9 +19,36 @@ export function AppHeader({ title, subtitle, action, onAction }: { title: string
   );
 }
 
-export function SectionTitle({ title, action }: { title: string; action?: string }) {
+type InfoContent = { title: string; message: string; testID?: string };
+
+export function InfoButton({ title, message, testID }: InfoContent) {
   const styles = useStyles();
-  return <View style={styles.sectionTitle}><Text style={styles.sectionText}>{title}</Text>{action ? <Text style={styles.sectionAction}>{action}</Text> : null}</View>;
+  return (
+    <Pressable
+      testID={testID}
+      onPress={() => Alert.alert(title, message)}
+      accessibilityRole="button"
+      accessibilityLabel={`More information about ${title}`}
+      accessibilityHint="Opens an explanation of the data requirements"
+      hitSlop={8}
+      style={({ pressed }) => [styles.infoButton, pressed && styles.pressed]}
+    >
+      <MaterialCommunityIcons name="information-outline" size={17} color={styles.infoIcon.color} />
+    </Pressable>
+  );
+}
+
+export function SectionTitle({ title, action, info }: { title: string; action?: string; info?: InfoContent }) {
+  const styles = useStyles();
+  return (
+    <View style={styles.sectionTitle}>
+      <View style={styles.sectionTitleCopy}>
+        <Text style={styles.sectionText}>{title}</Text>
+        {info ? <InfoButton {...info} /> : null}
+      </View>
+      {action ? <Text style={styles.sectionAction}>{action}</Text> : null}
+    </View>
+  );
 }
 
 export function MetricTile({ icon, label, value, hint, tone = "neutral" }: { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; value: string; hint: string; tone?: "neutral" | "accent" | "success" }) {
@@ -88,8 +115,11 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   headerAction: { minHeight: 44, justifyContent: "center", paddingHorizontal: 12 },
   headerActionText: { color: colors.brandPrimary, fontSize: 13, fontWeight: "600" },
   sectionTitle: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  sectionTitleCopy: { flexDirection: "row", alignItems: "center", gap: 4 },
   sectionText: { color: colors.onSurface, fontSize: 18, fontWeight: "500" },
   sectionAction: { color: colors.muted, fontSize: 12 },
+  infoButton: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  infoIcon: { color: colors.info },
   metricTile: { flex: 1, minWidth: "45%", backgroundColor: colors.surfaceSecondary, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 6 },
   metricLabel: { color: colors.muted, fontSize: 12 },
   metricValue: { color: colors.onSurface, fontSize: 20, fontWeight: "500", marginTop: 4 },
@@ -106,9 +136,9 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   primaryButtonText: { color: colors.onBrandPrimary, fontSize: 14, fontWeight: "600" },
   pressed: { opacity: 0.72 },
   chartFrame: { backgroundColor: colors.surfaceSecondary, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16 },
-  chartHeader: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginBottom: 18 },
+  chartHeader: { flexDirection: "column", alignItems: "flex-start", gap: 4, marginBottom: 14 },
   chartLabel: { color: colors.onSurface, fontSize: 15, fontWeight: "500" },
-  chartCaption: { color: colors.muted, fontSize: 11 },
+  chartCaption: { color: colors.muted, fontSize: 11, lineHeight: 15, flexShrink: 1 },
   chartArea: { height: 96, position: "relative", justifyContent: "space-between" },
   chartGrid: { height: 1, backgroundColor: colors.divider, width: "100%" },
   chartBars: { position: "absolute", inset: 0, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingHorizontal: 4 },

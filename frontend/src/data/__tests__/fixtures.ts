@@ -88,5 +88,7 @@ export function mkSample(timestamp: number, levelPercent: number): NativeBattery
     isCharging: true,
     cycleCount: -1,
     designCapacityMah: -1,
+    manufacturer: "Test Manufacturer",
+    modelName: "Test Device",
   };
 }

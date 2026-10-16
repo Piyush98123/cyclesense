@@ -20,6 +20,8 @@ export type NativeBatteryTelemetry = {
   isCharging: boolean;
   cycleCount: number; // -1 when unavailable (needs API 34+ and device support)
   designCapacityMah: number; // -1 when unavailable (PowerProfile reflection can fail on some OEMs)
+  manufacturer: string;
+  modelName: string;
 };
 
 export type NativeUsageStat = {

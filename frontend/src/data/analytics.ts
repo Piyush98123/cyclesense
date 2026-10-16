@@ -11,7 +11,7 @@ const ANOMALY_THRESHOLD_PERCENT = 20;
 export function computeBaseline(sessions: Session[]): number | null {
   const cutoff = Date.now() - BASELINE_DAYS * 24 * 60 * 60 * 1000;
   const dischargeRates = sessions
-    .filter((s) => s.mode === "discharge" && s.endAt !== null && s.rate !== null && new Date(s.startAt).getTime() >= cutoff)
+    .filter((s) => s.mode === "discharge" && s.endAt !== null && s.rate !== null && Number.isFinite(s.rate) && new Date(s.startAt).getTime() >= cutoff)
     .map((s) => s.rate as number)
     .filter((r) => r > 0);
   if (dischargeRates.length < 2) return null;

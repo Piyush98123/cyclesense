@@ -52,9 +52,17 @@ export default function Timeline() {
       <View style={styles.summaryDivider} />
       <View><Text style={styles.summaryKicker}>KNOWN CHARGERS</Text><Text style={styles.summaryValue}>{chargers.length}</Text></View>
     </View>
-    {chargers.length > 0 ? <>
-      <SectionTitle title="Known chargers" action="Tap to rename" />
-      <View style={styles.chargerList}>{chargers.map((charger) => (
+    <>
+      <SectionTitle
+        title="Known chargers"
+        action={chargers.length > 0 ? "Tap to rename" : "Awaiting data"}
+        info={{
+          title: "About known chargers",
+          message: "CycleSense learns a charger after a charge session ends with enough charger and current data to recognize it. Plug in and later unplug to complete a session; some devices may not report enough data to identify a charger.",
+          testID: "timeline-chargers-info",
+        }}
+      />
+      {chargers.length > 0 ? <View style={styles.chargerList}>{chargers.map((charger) => (
         <Pressable testID="charger-row" key={charger.id} onPress={() => openRename(charger)} accessibilityRole="button" style={({ pressed }) => [styles.chargerCard, pressed && styles.pressed]}>
           <View style={[styles.chargerIcon, chargerBadgeStyle(charger.category, styles)]}>
             <MaterialCommunityIcons name={chargerIconName(charger.plugLabel)} size={22} color={colors.brandPrimary} />
@@ -65,10 +73,18 @@ export default function Timeline() {
           </View>
           <MaterialCommunityIcons name="chevron-right" size={20} color={colors.muted} />
         </Pressable>
-      ))}</View>
-    </> : null}
+      ))}</View> : <EmptyPanel icon="power-plug-outline" title="No known chargers yet" body="Complete a charge session with a charger that reports enough identifying data." />}
+    </>
     <View style={styles.sectionRow}>
-      <SectionTitle title="Session history" action={ready ? `Last ${SESSION_HISTORY_LIMIT}` : "Loading"} />
+      <SectionTitle
+        title="Session history"
+        action={ready ? `Last ${SESSION_HISTORY_LIMIT}` : "Loading"}
+        info={{
+          title: "About session history",
+          message: "CycleSense records a charge or discharge session when it observes a plug/unplug or charging-state transition. Keep the app installed and allow battery access. The current session is marked LIVE until it ends. Comparison becomes available after at least two sessions have been recorded.",
+          testID: "timeline-sessions-info",
+        }}
+      />
       {sessions.length >= 2 ? <Pressable testID="compare-toggle" onPress={toggleCompareMode} accessibilityRole="button" style={({ pressed }) => [styles.compareToggle, compareMode && styles.compareToggleOn, pressed && styles.pressed]}>
         <Text style={[styles.compareToggleText, compareMode && styles.compareToggleTextOn]}>{compareMode ? "Cancel compare" : "Compare"}</Text>
       </Pressable> : null}

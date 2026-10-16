@@ -23,16 +23,27 @@ export type DigestWithTrend = Digest & { trend: DigestTrend };
 const PERIOD_DAYS: Record<DigestPeriod, number> = { daily: 1, "5day": 5 };
 const TREND_FLAT_THRESHOLD_PERCENT = 5;
 
+function validDischargeRates(sessions: Session[]): number[] {
+  return sessions
+    .filter((s) => s.mode === "discharge" && s.endAt !== null && s.rate !== null && Number.isFinite(s.rate) && s.rate > 0)
+    .map((s) => s.rate as number);
+}
+
+export function averageDischargeRate(sessions: Session[]): number | null {
+  const rates = validDischargeRates(sessions);
+  return rates.length > 0 ? Number((rates.reduce((total, rate) => total + rate, 0) / rates.length).toFixed(1)) : null;
+}
+
 function computeDigestForWindow(sessions: Session[], startMs: number, endMs: number): Digest {
   const closed = sessions.filter((s) => s.endAt !== null && new Date(s.startAt).getTime() >= startMs && new Date(s.startAt).getTime() < endMs);
-  const dischargeRates = closed.filter((s) => s.mode === "discharge" && s.rate !== null).map((s) => s.rate as number);
+  const dischargeRates = validDischargeRates(closed);
   const chargeDurations = closed.filter((s) => s.mode === "charge" && s.durationMinutes !== null).map((s) => s.durationMinutes as number);
   const mAhTotal = closed
     .filter((s) => s.mode === "discharge")
     .reduce((acc, s) => acc + (s.mAhDelta ?? 0), 0);
   const perDay = new Map<string, number>();
   for (const s of closed) {
-    if (s.mode !== "discharge" || s.rate === null) continue;
+    if (s.mode !== "discharge" || s.rate === null || !Number.isFinite(s.rate) || s.rate <= 0) continue;
     const day = new Date(s.startAt).toISOString().slice(0, 10);
     perDay.set(day, Math.max(perDay.get(day) ?? 0, s.rate));
   }

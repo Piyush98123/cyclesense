@@ -4,9 +4,9 @@ import { useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppHeader, ChartFrame, EmptyPanel, SectionTitle } from "@/src/components/cyclesense-ui";
+import { AppHeader, ChartFrame, EmptyPanel, InfoButton, SectionTitle } from "@/src/components/cyclesense-ui";
 import { isAnomaly, last24HoursOfSamples } from "@/src/data/analytics";
-import { computeChargingHabits, computeDigest, describeChargingHabits, DigestPeriod } from "@/src/data/digest";
+import { averageDischargeRate, computeChargingHabits, computeDigest, describeChargingHabits, DigestPeriod } from "@/src/data/digest";
 import { computeHealthTrend } from "@/src/data/health";
 import { computeWeekdayWeekendPattern, computeWeeklyAppRanking, describeWeekdayWeekendPattern } from "@/src/data/screen-time";
 import { CycleSenseNative } from "@/modules/cyclesense-native/src";
@@ -46,9 +46,8 @@ export default function Analytics() {
   );
   const chartData = range === "30D" ? (healthTrend.length > 0 ? healthTrend : undefined) : curve;
 
-  const rateSum = sessions.reduce((acc, s) => (s.rate !== null && s.mode === "discharge" ? acc + s.rate : acc), 0);
-  const rateCount = sessions.filter((s) => s.rate !== null && s.mode === "discharge").length;
-  const averageDrain = rateCount > 0 ? `${(rateSum / rateCount).toFixed(1)}%` : "—";
+  const overallAverageDrain = averageDischargeRate(sessions);
+  const averageDrain = overallAverageDrain !== null ? `${overallAverageDrain}%` : "—";
   const screenTotal = screenDailyLive.totalOnMinutes > 0 ? formatMinutes(screenDailyLive.totalOnMinutes) : "—";
   const screenTotalHint = capabilities.screenTracking ? "On-screen today" : "Native build only";
   const longestStreak = screenDailyLive.longestOnMinutes > 0 ? formatMinutes(screenDailyLive.longestOnMinutes) : "—";
@@ -132,28 +131,83 @@ export default function Analytics() {
           : curve
             ? `${filteredSamples.length} pts`
             : "Awaiting samples"}
+      info={{
+        title: range === "Digest" ? "About the digest" : range === "30D" ? "About the health trend" : "About the cycle curve",
+        message: range === "Digest"
+          ? "The digest summarizes completed sessions in the selected 24-hour or 5-day window. Average charge time needs at least one completed charge session; average drain and charge-drawn values need completed discharge data."
+          : range === "30D"
+            ? "The health trend needs at least two qualifying completed discharge sessions from the last 30 days, measured charge-counter changes, and a reported design capacity. Otherwise there is not enough data for a meaningful trend."
+            : nativeBridgeActive
+              ? "The 24-hour curve needs at least two recent native battery samples. Samples may take time to collect; optional background sampling adds readings while CycleSense is not open."
+              : "The 24-hour curve requires a native Android build that can collect battery samples.",
+        testID: "insights-chart-info",
+      }}
     />
     {range !== "Digest" ? <ChartFrame label={range === "30D" ? "Battery health estimate" : "Charge / discharge"} caption={curveCaption} data={chartData} /> : null}
     <View style={styles.insightGrid}>
-      <Insight icon="speedometer" label="Average drain" value={averageDrain} detail="% / hour" />
-      <Insight icon="monitor-cellphone" label="Screen-on time" value={screenTotal} detail={screenTotalHint} />
-      <Insight icon="timer-sand" label="Longest streak" value={longestStreak} detail={longestHint} />
-      <Insight icon="trending-up" label="Baseline" value={baselineDisplay} detail={baselineHint} />
-      <Insight icon="heart-pulse" label="Battery health" value={batteryHealth.healthPercent !== null ? `${batteryHealth.healthPercent}%` : "—"} detail={batteryHealth.healthPercent !== null ? `From ${batteryHealth.sampleCount} discharge session${batteryHealth.sampleCount === 1 ? "" : "s"} · ${batteryHealth.confidence} confidence` : status.designCapacityMah ? "Needs more history" : "Unavailable on device"} />
+      <Insight icon="speedometer" label="Average drain" value={averageDrain} detail="% / hour" info={{
+        title: "About average drain",
+        message: "This average uses completed discharge sessions with a measurable drain rate. Record and finish a discharge session for it to appear.",
+        testID: "insights-drain-info",
+      }} />
+      <Insight icon="monitor-cellphone" label="Screen-on time" value={screenTotal} detail={screenTotalHint} info={{
+        title: "About screen-on time",
+        message: "Today's total requires a native Android build with screen tracking available. Keep CycleSense installed and allow its required device access; totals accumulate during normal use.",
+        testID: "insights-screen-time-info",
+      }} />
+      <Insight icon="timer-sand" label="Longest streak" value={longestStreak} detail={longestHint} info={{
+        title: "About longest screen-on streak",
+        message: "This is the longest continuous screen-on run today. It requires native screen-tracking support and updates as usage data becomes available.",
+        testID: "insights-screen-streak-info",
+      }} />
+      <Insight icon="trending-up" label="Baseline" value={baselineDisplay} detail={baselineHint} info={{
+        title: "About the baseline",
+        message: "The baseline is the average rate from at least two completed discharge sessions in the last seven days. Charge sessions, open sessions, and older sessions do not count.",
+        testID: "insights-baseline-info",
+      }} />
+      <Insight icon="heart-pulse" label="Battery health" value={batteryHealth.healthPercent !== null ? `${batteryHealth.healthPercent}%` : "—"} detail={batteryHealth.healthPercent !== null ? `From ${batteryHealth.sampleCount} discharge session${batteryHealth.sampleCount === 1 ? "" : "s"} · ${batteryHealth.confidence} confidence` : status.designCapacityMah ? "Needs more history" : "Unavailable on device"} info={{
+        title: "About battery health",
+        message: "This is a local estimate, not an official Android health reading. It needs completed discharge sessions with a sufficiently large level drop and measured charge-counter change, plus the device's design capacity. More qualifying sessions improve confidence; charging alone does not update the estimate.",
+        testID: "insights-health-info",
+      }} />
     </View>
-    <SectionTitle title={digestPeriod === "daily" ? "24-hour digest" : "5-day digest"} action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} />
+    <SectionTitle title={digestPeriod === "daily" ? "24-hour digest" : "5-day digest"} action={digest.totalSessions > 0 ? `${digest.totalSessions} sessions` : "Awaiting data"} info={{
+      title: "About the period digest",
+      message: "The digest summarizes recorded sessions in the selected period. Charge-time averages need a completed charge session; drain metrics need completed discharge sessions with usable measurements. A session still in progress is not included.",
+      testID: "insights-digest-info",
+    }} />
     <View style={styles.periodBar}>{digestPeriods.map((item) => <Pressable testID={`digest-period-${item.id}`} key={item.id} onPress={() => setDigestPeriod(item.id)} accessibilityRole="button" accessibilityState={{ selected: digestPeriod === item.id }} style={[styles.periodButton, digestPeriod === item.id && styles.periodSelected]}><Text style={[styles.periodText, digestPeriod === item.id && styles.periodTextSelected]}>{item.label}</Text></Pressable>)}</View>
     <View testID="insights-digest" style={styles.digestGrid}>
-      <Insight icon="battery-charging-100" label="Avg drain" value={digest.averageDrain !== null ? `${digest.averageDrain}%` : "—"} detail={trendDetail} />
-      <Insight icon="lightning-bolt-outline" label="Avg charge time" value={digest.averageChargeMinutes !== null ? formatMinutes(digest.averageChargeMinutes) : "—"} detail="Completed sessions · any level" />
-      <Insight icon="atom-variant" label="Charge drawn" value={digest.totalMAh !== null ? `${digest.totalMAh.toFixed(0)} mAh` : "—"} detail="Across discharge sessions" />
-      <Insight icon="calendar-clock" label="Toughest day" value={digest.worstDay ? digest.worstDay.slice(5) : "—"} detail="Highest drain" />
+      <Insight icon="battery-charging-100" label="Avg drain" value={digest.averageDrain !== null ? `${digest.averageDrain}%` : "—"} detail={trendDetail} info={{
+        title: "About digest average drain",
+        message: "This average needs completed discharge sessions with a usable drain measurement in the selected period.",
+        testID: "insights-digest-drain-info",
+      }} />
+      <Insight icon="lightning-bolt-outline" label="Avg charge time" value={digest.averageChargeMinutes !== null ? formatMinutes(digest.averageChargeMinutes) : "—"} detail="Completed sessions · any level" info={{
+        title: "About average charge time",
+        message: "This average needs at least one completed charge session in the selected period. It averages the session durations as recorded, including partial charges; it is not necessarily a 0-to-100% charging time.",
+        testID: "insights-charge-time-info",
+      }} />
+      <Insight icon="atom-variant" label="Charge drawn" value={digest.totalMAh !== null ? `${digest.totalMAh.toFixed(0)} mAh` : "—"} detail="Across discharge sessions" info={{
+        title: "About charge drawn",
+        message: "Charge drawn is calculated from the battery charge-counter change during completed discharge sessions. It is unavailable if the device does not report usable charge-counter readings.",
+        testID: "insights-charge-drawn-info",
+      }} />
+      <Insight icon="calendar-clock" label="Toughest day" value={digest.worstDay ? digest.worstDay.slice(5) : "—"} detail="Highest drain" info={{
+        title: "About toughest day",
+        message: "This identifies the day with the highest measured drain in the selected period. It needs completed discharge-session data.",
+        testID: "insights-toughest-day-info",
+      }} />
     </View>
     {habitSummary ? (
       <View style={styles.confidenceBanner}><MaterialCommunityIcons name="clock-time-four-outline" size={19} color={colors.info} /><View style={styles.bannerCopy}><Text style={styles.bannerTitle}>Charging habits</Text><Text style={styles.bannerBody}>{habitSummary}</Text></View></View>
     ) : null}
 
-    <SectionTitle title="Weekly screen time" action={weeklyAppRanking.length > 0 ? "Last 7 days" : "Awaiting data"} />
+    <SectionTitle title="Weekly screen time" action={weeklyAppRanking.length > 0 ? "Last 7 days" : "Awaiting data"} info={{
+      title: "About weekly screen time",
+      message: "App rankings require a native Android build, Usage Stats enabled in Settings, and Android Usage Access permission. New or restricted devices may need time to accumulate usage data.",
+      testID: "insights-usage-info",
+    }} />
     {!settings.usageStatsEnabled ? (
       <EmptyPanel icon="apps" title="Usage access not enabled" body="Turn on App usage stats in Settings to see which apps used your screen time this week." action="Open settings" onAction={() => router.push("/(tabs)/settings")} />
     ) : weeklyAppRanking.length === 0 ? (
@@ -180,7 +234,20 @@ function formatMinutes(minutes: number) {
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
 }
 
-function Insight({ icon, label, value, detail }: { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; value: string; detail: string }) { const styles = useStyles(); return <View style={styles.insight}><MaterialCommunityIcons name={icon} size={18} color={styles.icon.color} /><Text style={styles.insightLabel}>{label}</Text><Text style={styles.insightValue}>{value}</Text><Text style={styles.insightDetail}>{detail}</Text></View>; }
+function Insight({ icon, label, value, detail, info }: { icon: keyof typeof MaterialCommunityIcons.glyphMap; label: string; value: string; detail: string; info?: { title: string; message: string; testID: string } }) {
+  const styles = useStyles();
+  return (
+    <View style={styles.insight}>
+      <View style={styles.insightTop}>
+        <MaterialCommunityIcons name={icon} size={18} color={styles.icon.color} />
+        {info ? <InfoButton {...info} /> : null}
+      </View>
+      <Text style={styles.insightLabel}>{label}</Text>
+      <Text style={styles.insightValue}>{value}</Text>
+      <Text style={styles.insightDetail}>{detail}</Text>
+    </View>
+  );
+}
 
 const useStyles = makeStyles((colors) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface }, content: { paddingHorizontal: 20, gap: 18 },
@@ -190,5 +257,5 @@ const useStyles = makeStyles((colors) => StyleSheet.create({
   topApps: { gap: 8 }, topAppRow: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: colors.surfaceTertiary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 }, topAppRank: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" }, topAppRankText: { color: colors.brandPrimary, fontSize: 12, fontWeight: "700" }, topAppCopy: { flex: 1, gap: 2 }, topAppName: { color: colors.onSurface, fontSize: 14, fontWeight: "500" }, topAppMeta: { color: colors.muted, fontSize: 10 }, topAppValue: { color: colors.brandPrimary, fontSize: 14, fontWeight: "600" },
   anomalyCard: { flexDirection: "row", gap: 10, backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.borderStrong, padding: 15 },
   anomalyTitle: { color: colors.brandPrimary, fontSize: 13, fontWeight: "600", letterSpacing: 0.3 },
-  insightGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, digestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, insight: { width: "47%", minHeight: 126, backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 7 }, icon: { color: colors.brandPrimary }, insightLabel: { color: colors.muted, fontSize: 12 }, insightValue: { color: colors.onSurface, fontSize: 24, fontWeight: "500", marginTop: 5 }, insightDetail: { color: colors.onSurfaceTertiary, fontSize: 11 },
+  insightGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, digestGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 }, insight: { width: "47%", minHeight: 126, backgroundColor: colors.surfaceSecondary, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 7 }, insightTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 24 }, icon: { color: colors.brandPrimary }, insightLabel: { color: colors.muted, fontSize: 12 }, insightValue: { color: colors.onSurface, fontSize: 24, fontWeight: "500", marginTop: 5 }, insightDetail: { color: colors.onSurfaceTertiary, fontSize: 11 },
 }));

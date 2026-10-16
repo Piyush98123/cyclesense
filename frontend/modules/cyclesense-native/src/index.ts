@@ -153,6 +153,8 @@ function mockTelemetry(): NativeBatteryTelemetry {
     isCharging: false,
     cycleCount: -1,
     designCapacityMah: -1,
+    manufacturer: "",
+    modelName: "",
   };
 }
 

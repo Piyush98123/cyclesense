@@ -1,4 +1,4 @@
-import { computeChargingHabits, computeDigest, describeChargingHabits, formatHabitHour } from "@/src/data/digest";
+import { averageDischargeRate, computeChargingHabits, computeDigest, describeChargingHabits, formatHabitHour } from "@/src/data/digest";
 import { daysAgoIso, mkSession } from "./fixtures";
 
 describe("computeDigest - period windows", () => {
@@ -62,6 +62,28 @@ describe("computeDigest - period windows", () => {
       mkSession({ mode: "charge", endAt: null, durationMinutes: 180, startAt: daysAgoIso(0.1) }),
     ];
     expect(computeDigest(sessions, "daily").averageChargeMinutes).toBe(90);
+  });
+
+  it("ignores invalid or non-positive discharge rates in averages", () => {
+    const sessions = [
+      mkSession({ mode: "discharge", rate: 12, startAt: daysAgoIso(0.2) }),
+      mkSession({ mode: "discharge", rate: -8, startAt: daysAgoIso(0.3) }),
+      mkSession({ mode: "discharge", rate: 0, startAt: daysAgoIso(0.4) }),
+      mkSession({ mode: "discharge", rate: Number.NaN, startAt: daysAgoIso(0.5) }),
+    ];
+    const digest = computeDigest(sessions, "daily");
+    expect(digest.averageDrain).toBe(12);
+    expect(averageDischargeRate(sessions)).toBe(12);
+  });
+
+  it("returns no average discharge rate when there are no valid completed rates", () => {
+    const sessions = [
+      mkSession({ mode: "discharge", rate: -8 }),
+      mkSession({ mode: "discharge", rate: 0 }),
+      mkSession({ mode: "discharge", endAt: null, rate: 10 }),
+    ];
+    expect(computeDigest(sessions, "daily").averageDrain).toBeNull();
+    expect(averageDischargeRate(sessions)).toBeNull();
   });
 });
 

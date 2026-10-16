@@ -19,6 +19,8 @@ export type BatteryStatus = {
   nativeBridge?: boolean;
   cycleCount?: number | null;
   designCapacityMah?: number | null;
+  manufacturer?: string | null;
+  modelName?: string | null;
 };
 
 export type ChargerCategory = "fast" | "standard" | "slow" | "trickle";
