@@ -1,4 +1,4 @@
-package com.emergent.mobileappbuilder.y0lu2t
+package com.androspace.cyclesense
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

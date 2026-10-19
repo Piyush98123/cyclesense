@@ -1,4 +1,4 @@
-package com.emergent.mobileappbuilder.y0lu2t
+package com.androspace.cyclesense
 
 import android.app.Application
 import android.content.res.Configuration

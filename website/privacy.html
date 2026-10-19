@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#101512">
+    <meta name="description" content="CycleSense Privacy Policy: what the app reads, stores on your device, and how you control it.">
+    <title>Privacy Policy — CycleSense</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="CycleSense home">
+        <span class="brand-mark" aria-hidden="true"><span></span></span><span>CycleSense</span>
+      </a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="index.html#features">Features</a><a href="index.html#privacy">Privacy</a><a href="support.html">Support</a>
+      </nav>
+      <a class="button button-small button-outline" href="support.html">Get in touch</a>
+    </header>
+
+    <main class="legal-page section-wrap">
+      <a class="back-link" href="index.html">← Back to CycleSense</a>
+      <p class="eyebrow">Your information, explained</p>
+      <h1>Privacy <span>Policy</span></h1>
+      <p class="legal-updated">Effective date: October 19, 2026</p>
+      <div class="notice-box"><strong>Before publishing:</strong> Replace <code>REPLACE_WITH_SUPPORT_EMAIL</code> with a monitored contact address and publish this page at a stable public HTTPS URL. Confirm the descriptions against the exact release build and any SDKs added before submission.</div>
+
+      <p>This policy describes how the CycleSense Android app handles information. CycleSense is designed to process its battery history on your device. It does not require an account and the app code currently has no CycleSense-operated server, cloud sync, advertising SDK, or analytics SDK.</p>
+
+      <h2>Information the app uses</h2>
+      <p>To show battery status and build your local history, CycleSense may read and store the following on your device:</p>
+      <ul>
+        <li><strong>Battery and device measurements:</strong> battery level and state, charge/discharge timing, voltage, temperature, current, charge counter, battery condition and supported device capacity information. Availability depends on your Android device. Some readings are estimates or may be unavailable.</li>
+        <li><strong>Cycle and charger history:</strong> session times, battery levels, calculated rates, charger type or a name you assign, notes and tags, and supported session sample points.</li>
+        <li><strong>Screen-use summaries:</strong> screen-on duration totals used to add context to a discharge session. The app stores summaries rather than a history of what you viewed.</li>
+        <li><strong>Settings:</strong> alert thresholds, sound preference, background sampling preference, dashboard order and other app preferences.</li>
+        <li><strong>Background battery samples:</strong> if you turn on background sampling, Android periodically records battery measurements on the device. The native sample buffer is bounded to about 720 records (roughly 7.5 days at a 15-minute interval).</li>
+      </ul>
+
+      <h2>Optional Android Usage Access</h2>
+      <p>The advanced App usage stats feature is off by default. If you turn it on, Android sends you to its Usage Access settings and you must grant the special access there. When granted, CycleSense can read app names/package identifiers and foreground-use durations to show usage summaries and relate the leading apps to a discharge session. The app queries this information on the device and saves any session summary with your local session history. You can leave this feature off and continue using the core battery features.</p>
+      <p>To revoke access, open Android Settings and remove CycleSense from the Usage Access list. Revoking access prevents future reads but does not erase summaries already saved in CycleSense; use Android’s app storage controls to remove local app data.</p>
+
+      <h2>Where information goes</h2>
+      <p>The app does not transmit this information to CycleSense or a CycleSense backend. If you use Export session history, CycleSense creates a CSV locally and opens Android’s share sheet. The destination you choose receives the file under that destination’s own privacy terms; CycleSense does not control what happens to a shared copy.</p>
+      <p>Android backup is enabled in the current app configuration. Depending on Android version, device settings and your Google account backup choices, Android may back up eligible app data. That system backup is handled by Android/Google, not by a CycleSense server. Review your device’s backup settings if you do not want app data included.</p>
+
+      <h2>Retention and deletion</h2>
+      <p>CycleSense keeps its history and preferences in app-private storage on your device. The app currently has no single in-app “delete all data” control. To erase CycleSense’s local app data, use Android Settings → Apps → CycleSense → Storage → Clear storage/data, or uninstall the app. Clearing or uninstalling the app does not remove a CSV you previously exported or shared, and a system backup may restore eligible data if backup is enabled.</p>
+
+      <h2>Permissions</h2>
+      <p>Android permissions support app functions such as battery session monitoring, optional background sampling, local notifications, sound/vibration cues, home-screen widgets, and the opt-in Usage Access feature described above. You can manage permissions in Android Settings. The precise permission prompts and availability vary by Android version and device.</p>
+
+      <h2>Children</h2>
+      <p>CycleSense is a general battery utility, not designed specifically for children. The publisher must select the app’s target audience in Google Play and apply any additional requirements that selection triggers.</p>
+
+      <h2>Website and hosting</h2>
+      <p>This website is a static information site and does not intentionally use advertising, analytics, or tracking cookies. Its hosting provider may process standard request and security logs, such as IP address, time and requested page, under that provider’s terms. The hosting provider and its retention settings depend on where the publisher deploys this site.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If app behavior or data handling changes, this policy will be updated and the effective date changed. The publisher should also update the Google Play Data safety answers and any in-app privacy disclosures to match the released build.</p>
+
+      <h2>Contact</h2>
+      <p>For privacy questions, contact <strong>REPLACE_WITH_SUPPORT_EMAIL</strong>.</p>
+      <p class="legal-footnote">This page is a publisher draft, not legal advice. The publisher is responsible for confirming it is accurate, providing a working contact, and meeting applicable legal and Google Play requirements.</p>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-top"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"><span></span></span><span>CycleSense</span></a><p>Battery insights, made clear.</p><nav aria-label="Footer navigation"><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="support.html">Support</a></nav></div>
+      <div class="footer-bottom"><span>© 2026 CycleSense</span><span>On-device by design.</span></div>
+    </footer>
+  </body>
+</html>

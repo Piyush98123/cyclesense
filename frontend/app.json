@@ -16,7 +16,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
       "backgroundColor": "#121417"
       },
-      "package": "com.emergent.mobileappbuilder.y0lu2t"
+      "package": "com.androspace.cyclesense"
     },
     "web": {
       "bundler": "metro",
