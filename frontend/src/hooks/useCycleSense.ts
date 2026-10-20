@@ -400,11 +400,6 @@ export function useCycleSense() {
       setChargerGreeting({ name: guessed.name, kind: "known", category: guessed.category });
     }
     if (NATIVE_ACTIVE) {
-      try {
-        await CycleSenseNative.startSessionForeground(next.mode, next.startLevel);
-      } catch (error) {
-        console.error("[CycleSense] Could not start foreground session tracking.", error);
-      }
       // Home-screen launcher icon reflects real state: green while charging,
       // amber while draining. Cosmetic only - failures here never block
       // session tracking (see setDynamicIcon's own try/catch on the native side).
@@ -509,9 +504,6 @@ export function useCycleSense() {
       levelPercent: endLevel,
     };
     await storage.setItem(POWER_STATE_STORAGE_KEY, JSON.stringify(persistedState));
-    if (NATIVE_ACTIVE) {
-      await CycleSenseNative.stopSessionForeground();
-    }
   }, [chargers, commitSessions, flushScreenOnInterval, openSession, persistChargers, samples, sessions, status]);
 
   // Auto-track plug/unplug: plug in → open a charge session; unplug → close

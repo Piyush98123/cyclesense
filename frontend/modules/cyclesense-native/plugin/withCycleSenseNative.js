@@ -2,8 +2,6 @@ const { withAndroidManifest, AndroidConfig } = require("@expo/config-plugins");
 
 const PERMISSIONS = [
   "android.permission.PACKAGE_USAGE_STATS",
-  "android.permission.FOREGROUND_SERVICE",
-  "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
   "android.permission.POST_NOTIFICATIONS",
   "android.permission.RECEIVE_BOOT_COMPLETED",
 ];
@@ -17,9 +15,9 @@ const PERMISSIONS = [
 function withCycleSenseNative(config) {
   return withAndroidManifest(config, (mod) => {
     const manifest = mod.modResults;
-    manifest["$"] = manifest["$"] || {};
-    if (!manifest["$"]["xmlns:tools"]) {
-      manifest["$"]["xmlns:tools"] = "http://schemas.android.com/tools";
+    manifest.manifest["$"] = manifest.manifest["$"] || {};
+    if (!manifest.manifest["$"]["xmlns:tools"]) {
+      manifest.manifest["$"]["xmlns:tools"] = "http://schemas.android.com/tools";
     }
 
     // Ensure @expo/config-plugins helper preserves existing permissions
@@ -31,6 +29,21 @@ function withCycleSenseNative(config) {
       if (node.$ && node.$["android:name"] === "android.permission.PACKAGE_USAGE_STATS") {
         node.$["tools:ignore"] = "ProtectedPermissions";
       }
+    }
+
+    const application = manifest.manifest.application && manifest.manifest.application[0];
+    if (!application) {
+      throw new Error("CycleSense Android manifest is missing its application element.");
+    }
+    application.service = application.service || [];
+    const workManagerForegroundService = "androidx.work.impl.foreground.SystemForegroundService";
+    if (!application.service.some((service) => service.$ && service.$["android:name"] === workManagerForegroundService)) {
+      application.service.push({
+        $: {
+          "android:name": workManagerForegroundService,
+          "tools:node": "remove",
+        },
+      });
     }
 
     return mod;

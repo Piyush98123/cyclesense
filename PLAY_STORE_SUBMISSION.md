@@ -6,24 +6,33 @@ This is a code-based readiness review and a practical release checklist, not a P
 
 **Not ready for production upload.** Start with the P0 blockers below. This is a prioritized action list—not a report that the steps have already been completed.
 
-### P0 — Must fix before the first CycleSense upload
+### P0 — Must fix before the first testing-track AAB
 
 | Action | Evidence / exact next step |
 |---|---|
 | Package name selected | Set to `com.androspace.cyclesense` in the Expo Android config, Android namespace/application ID, and native app package declarations. Confirm the ID is available and controlled by you in Play Console before first upload; package names cannot be changed after publishing. |
-| Configure production signing | `frontend/android/app/build.gradle` signs `release` with `signingConfigs.debug`. Configure a private production upload key or managed EAS credentials and Play App Signing. Never upload a debug-signed bundle; do not commit signing credentials. |
-| Fix the foreground service | The service is declared as `dataSync` but its stated purpose is keeping battery tracking alive. Review the current Android/Play foreground-service requirements, select a permitted implementation/type for the actual feature, or remove the service if it is not eligible. Retest background behavior. |
-| Finish and publish privacy/support information | Replace every `REPLACE_WITH_SUPPORT_EMAIL` in `website/`, publish the site over HTTPS, confirm all policy/support pages work without login, and use the final privacy URL in Play Console. |
+| Configure production signing | `frontend/eas.json` now selects EAS-managed remote credentials and an Android App Bundle for the production profile. Sign in to EAS, link the project, let EAS create/manage the upload key, enroll in Play App Signing, then verify the built AAB is signed with the expected upload certificate. Never upload a debug-signed bundle or commit signing credentials. |
+| Correct the foreground-service design | Removed the `dataSync` foreground service: battery-session tracking does not perform data synchronization, and keeping a process alive is not a valid foreground-service purpose. Optional periodic sampling still uses WorkManager; test background transitions and sampling on devices before release. |
 
 ### P1 — Must complete before submitting the release for review
 
 | Action | Evidence / exact next step |
 |---|---|
-| Review and minimize permissions | The merged release manifest includes `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, and `WRITE_EXTERNAL_STORAGE`; inspected app source did not show a need for overlay or legacy storage. Verify against the final feature set and remove permissions that are not needed. Keep Usage Access optional and clearly explained. Re-check the merged manifest afterwards. |
-| Complete app-content declarations | In CycleSense's Play Console entry, provide accurate Data safety, ads, target-audience, content-rating, privacy-policy, and any special-permission declarations. Recheck final dependencies and SDK data practices before answering. |
+| Review and minimize permissions | **Done:** removed unused `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, and `FOREGROUND_SERVICE` from the merged release manifest. Expo config blocks the app-level foreground permission; the native manifest also removes WorkManager's unused foreground service declaration. Keep Usage Access optional and clearly explained. |
+| Publish privacy/support pages | The support email is now `engineervoice1602@gmail.com`. Publish the site over HTTPS, confirm all pages work without login, review the draft text for accuracy, and use the final privacy URL in Play Console. |
+| Complete app-content declarations | In CycleSense's Play Console entry, provide accurate Data safety, ads, target-audience, content-rating, privacy-policy, and any special-permission declarations. You confirmed the intended age bands are 13–15, 16–17, and 18+. You confirmed the first release will have no ads; declare no ads only if the final dependency list and bundle remain free of ad SDKs. Recheck final dependencies and SDK data practices before answering. |
 | Finish the store listing | Provide final descriptions, contact details, screenshots, and required graphics (including feature graphic). The source has an app icon, but no Play screenshots or feature graphic were found. Ensure listing claims match the release. |
-| Test the signed release artifact | Build and install a production-signed release. Test permissions both granted and denied, charging transitions, background work, notifications, widget, Usage Access opt-in, CSV export, data clearing, crashes, and supported Android versions. Review Play pre-launch results and resolve issues. |
+| Test the signed release artifact | A local release APK compiled after syncing the package and permissions, but it used the Android Debug certificate. No Android test device is connected here. Build the production AAB with EAS remote credentials and verify its signing certificate; install a signed test build on supported Android devices and check permission-denial paths, charging transitions, WorkManager sampling, notifications, widget, Usage Access opt-in, CSV export, data clearing, crashes, and Play pre-launch results. |
 | Upload CycleSense to a test track | Use CycleSense's own internal/closed track, test its bundle and address crashes, compatibility issues, tester feedback, and Play warnings before production. |
+
+### Status of the requested pre-review work
+
+- **Permissions:** cleaned up and verified absent from the merged release manifest, including the unused WorkManager foreground service permission/declaration.
+- **Native regeneration:** Expo prebuild exposed a malformed manifest wrapper from the CycleSense config plugin. The plugin now attaches the tools namespace to the `<manifest>` node; release compilation and merged-manifest verification succeed.
+- **Store listing text:** draft copy is provided below; final listing is not entered in Play Console. Screenshots, feature graphic, and published HTTPS URLs are still needed. The support email is `engineervoice1602@gmail.com`.
+- **Play declarations:** not submitted. They must be completed in CycleSense's Play Console entry and match the exact release. The first release is planned to have no ads; verify the final dependency list and bundle contain no ad SDK before declaring that. The inspected app has no app-operated backend. Review Data safety, optional Usage Access, Android backup, user-initiated CSV sharing, the confirmed 13–15 / 16–17 / 18+ audience, content rating, and any special-permission notices against the live Console questions.
+- **Signing:** `frontend/eas.json` defines the production AAB profile and selects remote EAS credentials. EAS has not been linked/authenticated and no production upload key or AAB has been created. The local Gradle release APK was signed with `CN=Android Debug`; it is validation-only and must not be uploaded.
+- **Testing track upload:** not done. No signed production AAB or authenticated Play Console session is available in this workspace. Upload from the existing developer account after the blockers above are resolved.
 
 ### P2 — Check in Play Console; required only if it applies
 
@@ -38,21 +47,20 @@ This is a code-based readiness review and a practical release checklist, not a P
 - **Create another Play Console account:** No. Use the account you already have and create CycleSense as a separate app entry.
 - **Create an app-operated backend:** No. The inspected mobile app works locally; the backend file is a commented prototype and is not connected to the app.
 - **Raise target API now:** No. The generated release manifest targets API 36, meeting the requirement checked for this review. Reconfirm the current requirement when submitting.
-- **Declare ads now:** No, if you ship without an ad SDK. The inspected dependencies/source did not show ads. If ads are added, update the privacy policy, consent flow, dependencies, and Play ads/Data safety declarations before shipping.
+- **Ads for the first release:** Confirmed no ads. Do not add an ad SDK to this release; verify the final dependencies and declare no ads in Play Console. If you add ads in a later release, update the privacy policy, consent flow, dependencies, and Play ads/Data safety declarations before shipping.
 - **Publish the bundle previously built for validation:** No. It was debug-signed and was removed after validation. Build a new bundle after signing is fixed.
 
 The Play Console account exists and another app is in closed testing, but account-level production access for CycleSense is not confirmed from this repository. Use the CycleSense dashboard for that status.
 
 ### Publish the website
 
-The `website/` directory is a static site and needs no build step. Publish its contents through an HTTPS static host (for example, GitHub Pages with a configured workflow or another static hosting provider), then verify the landing page, `privacy.html`, `terms.html` and `support.html` load without authentication. Replace the support email placeholder before publishing. Use the final privacy URL in Play Console and in the app if an in-app privacy link is added.
+The `website/` directory is a static site and needs no build step. The `Deploy website to GitHub Pages` workflow publishes it when changes are pushed to `production-release`; enable GitHub Pages with **GitHub Actions** as the build and deployment source in repository settings. Verify the landing page, `privacy.html`, `terms.html` and `support.html` load without authentication. Confirm the support email receives mail before publishing. Use the final privacy URL in Play Console and in the app if an in-app privacy link is added.
 
 ### Important permission and feature checks
 
-- `SYSTEM_ALERT_WINDOW` is present in the main manifest, but no overlay implementation was found in app source. Remove it if the production app does not need overlays.
-- `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` are declared only through API 32. The app’s CSV export writes to app-private storage and opens Android’s share sheet; verify whether these manifest entries are still needed after inspecting the merged release manifest.
+- `SYSTEM_ALERT_WINDOW`, `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` were removed from the main manifest and added to Expo's `android.blockedPermissions` because the inspected production features do not use overlays or direct shared-storage access. CSV export uses app-private storage and Android's share sheet. `FOREGROUND_SERVICE` and WorkManager's `SystemForegroundService` declaration are also removed because no CycleSense worker uses foreground execution. Confirm these remain absent from the merged manifest after regenerating native files.
 - `PACKAGE_USAGE_STATS` is a special permission. The app correctly defaults its setting off and opens Android’s Usage Access settings only after user action. Keep the access optional, prominent, tied to the user-facing app-usage insight, and described in the privacy policy and any Play permission declaration.
-- The custom foreground service declares type `dataSync` but describes its purpose as keeping battery session tracking alive. This type/purpose mismatch needs an Android/Play policy review and a tested design correction before release. Do not treat a successful Gradle build as policy approval.
+- The app no longer declares a foreground service. The removed `dataSync` service only attempted to keep the process alive; it did not provide eligible user-visible data synchronization. Optional background samples continue through WorkManager. Verify the final merged manifest has no foreground-service permissions/service and test session transitions and sampling with the app backgrounded.
 - `android:allowBackup="true"` means Android system backup may include eligible local app data according to device and account settings. The website privacy policy makes this caveat explicit.
 - The separate `backend/server.py` is a commented starter prototype and is not connected to the mobile app in the inspected source. Do not deploy it as part of this first release unless it is separately secured, tested, and added to the privacy disclosures.
 
@@ -83,14 +91,14 @@ Optional app-usage insights require you to grant Android Usage Access in system 
 Tools. Confirm the category and tags fit the final listing.
 
 **Support and policy URLs**  
-Use the published HTTPS URLs for `website/support.html` and `website/privacy.html`. Do not submit while the support email placeholder remains.
+Use the published HTTPS URLs for `website/support.html` and `website/privacy.html`. The support contact is `engineervoice1602@gmail.com`; confirm it receives mail before submission.
 
 ## Play Console release process
 
 1. **Use your existing Play Console account.** You already have an account and another app in closed testing, so account creation is not a CycleSense task. Confirm which account type you have and whether Play Console has already granted that account production access.
 2. **Create a separate CycleSense app entry.** In the existing account, create the CycleSense app and complete its own dashboard, listing, policy declarations and release setup. An existing app's closed-test track is not a CycleSense track; do not assume its test history satisfies a production-access gate shown for CycleSense.
 3. **Finalize the app identity.** Select the final unique package name before CycleSense's first upload. Set the app name, version name and a monotonically increasing integer `versionCode`.
-4. **Prepare a signed Android App Bundle.** Configure a production upload key (or EAS-managed Android credentials), enroll in Play App Signing, and build a release `.aab`. The current Gradle `release` signing config is debug-only and must be replaced. Keep the upload key and passwords outside source control.
+4. **Prepare a signed Android App Bundle.** From `frontend`, sign in to EAS and link this app to an EAS project (`npx eas-cli login`, then `npx eas-cli init`). Run `npx eas-cli build --platform android --profile production`; the checked-in profile requests remote EAS credentials and an `.aab`. Let EAS generate/manage the upload key, enroll in Play App Signing, and verify the resulting bundle certificate before upload. Keep signing credentials outside source control.
 5. **Test the actual release binary.** Install a release-like build on representative devices and Android versions. Test first launch, permissions denied/granted, charging transitions, background sampling, notifications, widget behavior, optional Usage Access, offline behavior, CSV sharing and data clearing. Check crashes, battery impact, accessibility and the merged manifest.
 6. **Complete App content and privacy declarations.** Add the active privacy-policy URL; answer ads, target audience, content-rating, Data safety and any permission/access declarations accurately. Provide reviewer instructions if any feature is gated. No account/login is present in the inspected app. Review age-targeting requirements before selecting an audience.
 7. **Complete the store listing.** Add short/full descriptions, category, contact details, icon, feature graphic and required screenshots. Ensure screenshots and claims reflect the shipped app. Avoid implying that estimated battery health is a manufacturer reading or that CycleSense extends battery life.
@@ -99,16 +107,16 @@ Use the published HTTPS URLs for `website/support.html` and `website/privacy.htm
 10. **Submit and roll out.** Create the CycleSense production release, upload the signed AAB, review countries/devices and release notes, send the changes for review, then use a staged rollout if appropriate. Monitor Android vitals, ratings, policy notices and support requests.
 11. **Maintain the release.** For every update, increment `versionCode`, retest permissions and disclosures, and meet the target API level in effect at submission time.
 
-### Local Android bundle command
+### EAS production bundle command
 
-Once production signing is configured, the existing native project can build a bundle from PowerShell:
+From PowerShell, after signing in and linking the project:
 
 ```powershell
-Set-Location frontend\android
-.\gradlew.bat :app:bundleRelease
+Set-Location frontend
+npx eas-cli build --platform android --profile production
 ```
 
-Expected output is `frontend\android\app\build\outputs\bundle\release\app-release.aab`. With current source settings, the release is signed using the debug config; do not upload that artifact until release signing is corrected.
+EAS will prompt for remote Android credentials if they are not configured. Do not upload until the build succeeds, the AAB certificate is verified as the expected upload key, the merged manifest has been checked, and device testing is complete.
 
 ### Useful official references
 

@@ -21,8 +21,6 @@ type NativeSurface = {
   getUsageStats(dayCount: number): Promise<NativeUsageStat[]>;
   getUsageEvents(startMs: number, endMs: number): Promise<NativeUsageEvent[]>;
   getNetworkUsage(startMs: number, endMs: number): Promise<NativeNetworkUsageStat[]>;
-  startSessionForeground(mode: string, startLevel: number): Promise<boolean>;
-  stopSessionForeground(): Promise<boolean>;
   isScreenOn(): Promise<boolean>;
   setSoundCuesEnabled(enabled: boolean): Promise<boolean>;
    setDynamicIconState(charging: boolean): Promise<boolean>;
@@ -81,14 +79,6 @@ export const CycleSenseNative = {
 
   async getNetworkUsage(startMs: number, endMs: number): Promise<NativeNetworkUsageStat[]> {
     return nativeModule ? nativeModule.getNetworkUsage(startMs, endMs) : [];
-  },
-
-  async startSessionForeground(mode: "charge" | "discharge", startLevel: number): Promise<boolean> {
-    return nativeModule ? nativeModule.startSessionForeground(mode, startLevel) : false;
-  },
-
-  async stopSessionForeground(): Promise<boolean> {
-    return nativeModule ? nativeModule.stopSessionForeground() : false;
   },
 
   async isScreenOn(): Promise<boolean> {

@@ -1,11 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
   package="expo.modules.cyclesense">
   <application>
-    <service
-      android:name=".SessionForegroundService"
-      android:exported="false"
-      android:foregroundServiceType="dataSync" />
-
     <receiver
       android:name=".PowerBroadcastReceiver"
       android:exported="true">

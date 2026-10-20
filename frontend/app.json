@@ -12,6 +12,12 @@
       "bundleIdentifier": "com.emergent.mobileappbuilder.y0lu2t"
     },
     "android": {
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.FOREGROUND_SERVICE"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
       "backgroundColor": "#121417"

@@ -6,10 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
-import androidx.core.content.ContextCompat
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
@@ -128,32 +126,6 @@ class CycleSenseNativeModule : Module() {
 
     AsyncFunction("getNetworkUsage") { startMs: Double, endMs: Double ->
       return@AsyncFunction jsonToList(UsageStatsHelper.queryNetworkUsage(context, startMs.toLong(), endMs.toLong()))
-    }
-
-    AsyncFunction("startSessionForeground") { mode: String, startLevel: Int ->
-      val intent = Intent(context.applicationContext, SessionForegroundService::class.java).apply {
-        action = SessionForegroundService.ACTION_START
-        putExtra(SessionForegroundService.EXTRA_MODE, mode)
-        putExtra(SessionForegroundService.EXTRA_START_LEVEL, startLevel)
-      }
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        ContextCompat.startForegroundService(context.applicationContext, intent)
-      } else {
-        context.applicationContext.startService(intent)
-      }
-      return@AsyncFunction true
-    }
-
-    AsyncFunction("stopSessionForeground") {
-      val intent = Intent(context.applicationContext, SessionForegroundService::class.java).apply {
-        action = SessionForegroundService.ACTION_STOP
-      }
-      try {
-        context.applicationContext.startService(intent)
-      } catch (_: Throwable) {
-        // service already stopped
-      }
-      return@AsyncFunction true
     }
 
     AsyncFunction("isScreenOn") {
